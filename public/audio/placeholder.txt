@@ -1,0 +1,8 @@
+Audio files for listening exercises should be placed in this directory.
+
+Required audio files:
+- family-intro.mp3: Audio for "Family Introduction" listening exercise
+- daily-schedule.mp3: Audio for "Daily Schedule" listening exercise
+
+You can add MP3, WAV, or OGG audio files here.
+For demo purposes, the app will show a placeholder when audio files are not available.

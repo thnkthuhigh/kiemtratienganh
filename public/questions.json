@@ -1,0 +1,156 @@
+{
+  "reading": [
+    {
+      "id": "reading-1",
+      "title": "My Daily Routine",
+      "passage": "Every morning, I wake up at 6:30 AM. After brushing my teeth and washing my face, I have breakfast with my family. My mother usually prepares toast, eggs, and fresh juice for us. At 7:45 AM, I leave home and walk to school, which takes about 15 minutes.\n\nAt school, I have six classes every day. My favorite subject is English because our teacher, Ms. Johnson, makes the lessons very interesting. During lunch break, I often play soccer with my friends in the schoolyard.\n\nAfter school ends at 3:00 PM, I go home and have lunch. Then I spend about two hours doing homework. In the evening, I help my mother prepare dinner, and we eat together as a family. Before going to bed, I like to read books or listen to music.",
+      "questions": [
+        {
+          "id": 1,
+          "question": "What time does the writer wake up?",
+          "options": ["6:00 AM", "6:30 AM", "7:00 AM", "7:30 AM"],
+          "correct": "B"
+        },
+        {
+          "id": 2,
+          "question": "What is the writer's favorite subject?",
+          "options": ["Math", "Science", "English", "History"],
+          "correct": "C"
+        },
+        {
+          "id": 3,
+          "question": "How long does it take to walk to school?",
+          "options": ["10 minutes", "15 minutes", "20 minutes", "25 minutes"],
+          "correct": "B"
+        }
+      ]
+    },
+    {
+      "id": "reading-2",
+      "title": "The Benefits of Reading",
+      "passage": "Reading is one of the most beneficial activities for our minds. When we read regularly, we improve our vocabulary, enhance our critical thinking skills, and expand our knowledge about the world around us.\n\nStudies have shown that people who read frequently have better memory and concentration. Reading also helps reduce stress and can improve our sleep quality. Furthermore, reading fiction books can help us develop empathy by allowing us to understand different perspectives and experiences.\n\nFor students, reading is especially important because it improves academic performance across all subjects. Whether you prefer novels, newspapers, or online articles, the key is to read consistently and choose materials that interest you.",
+      "questions": [
+        {
+          "id": 4,
+          "question": "According to the passage, what does reading help improve?",
+          "options": ["Only vocabulary", "Memory and concentration", "Physical health", "Social skills"],
+          "correct": "B"
+        },
+        {
+          "id": 5,
+          "question": "Why is reading particularly important for students?",
+          "options": ["It's required by teachers", "It improves academic performance", "It's entertaining", "It's easy to do"],
+          "correct": "B"
+        }
+      ]
+    },
+    {
+      "id": "reading-3",
+      "title": "Environmental Protection",
+      "passage": "Climate change is one of the biggest challenges facing our planet today. Rising temperatures, melting ice caps, and extreme weather events are clear signs that we need to take action immediately.\n\nThere are many simple ways individuals can help protect the environment. We can reduce energy consumption by turning off lights and electronics when not in use. Using public transportation, walking, or cycling instead of driving helps reduce carbon emissions. Recycling and reducing waste also make a significant difference.\n\nGovernments and businesses also play a crucial role in environmental protection. They can invest in renewable energy sources like solar and wind power, create stricter environmental regulations, and support sustainable practices.",
+      "questions": [
+        {
+          "id": 6,
+          "question": "What are signs of climate change mentioned in the passage?",
+          "options": ["Only rising temperatures", "Rising temperatures and melting ice caps", "Only extreme weather", "Population growth"],
+          "correct": "B"
+        }
+      ]
+    }
+  ],
+  "listening": [
+    {
+      "id": "listening-1",
+      "title": "Family Introduction",
+      "audioUrl": "/audio/family-intro.mp3",
+      "transcript": "Hello, my name is Sarah. I live with my family in a small town. We have a beautiful house with a garden. My father works as a teacher and my mother is a nurse. I have one younger brother who is ten years old. In our free time, we like to play games together and watch movies.",
+      "questions": [
+        {
+          "id": 1,
+          "type": "fill-blank",
+          "question": "My name is _____ and I live with my _____.",
+          "blanks": ["Sarah", "family"],
+          "options": null
+        },
+        {
+          "id": 2,
+          "type": "true-false",
+          "question": "Sarah's father is a doctor.",
+          "correct": "false"
+        },
+        {
+          "id": 3,
+          "type": "multiple-choice",
+          "question": "How old is Sarah's brother?",
+          "options": ["8 years old", "10 years old", "12 years old", "15 years old"],
+          "correct": "B"
+        }
+      ]
+    },
+    {
+      "id": "listening-2",
+      "title": "Daily Schedule",
+      "audioUrl": "/audio/daily-schedule.mp3",
+      "transcript": "I wake up at seven o'clock every morning. After breakfast, I go to school at eight thirty. My classes finish at three in the afternoon. Then I go home and do my homework. In the evening, I have dinner with my family at six o'clock.",
+      "questions": [
+        {
+          "id": 4,
+          "type": "fill-blank",
+          "question": "I wake up at _____ every morning and go to school at _____.",
+          "blanks": ["seven o'clock", "eight thirty"],
+          "options": null
+        },
+        {
+          "id": 5,
+          "type": "true-false",
+          "question": "Classes finish at 4 PM.",
+          "correct": "false"
+        },
+        {
+          "id": 6,
+          "type": "multiple-choice",
+          "question": "What time is dinner?",
+          "options": ["5 o'clock", "6 o'clock", "7 o'clock", "8 o'clock"],
+          "correct": "B"
+        }
+      ]
+    }
+  ],
+  "clozetext": [
+    {
+      "id": 6,
+      "question": "Fill in the blank: 'I _____ to school every day.'",
+      "options": ["go", "went", "going", "gone"],
+      "correct": "A",
+      "image": null
+    },
+    {
+      "id": 7,
+      "question": "Complete the sentence: 'She _____ a beautiful dress yesterday.'",
+      "options": ["buy", "bought", "buying", "buys"],
+      "correct": "B",
+      "image": null
+    },
+    {
+      "id": 8,
+      "question": "Choose the correct word: 'The children _____ playing in the park.'",
+      "options": ["is", "are", "was", "been"],
+      "correct": "B",
+      "image": null
+    },
+    {
+      "id": 9,
+      "question": "Fill in the gap: 'Look at this _____ in the picture.'",
+      "options": ["house", "car", "tree", "flower"],
+      "correct": "A",
+      "image": "/images/house.svg"
+    },
+    {
+      "id": 10,
+      "question": "Complete: 'We _____ dinner at 7 PM every evening.'",
+      "options": ["have", "has", "having", "had"],
+      "correct": "A",
+      "image": null
+    }
+  ]
+}

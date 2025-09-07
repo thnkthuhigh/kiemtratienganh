@@ -1,0 +1,8 @@
+Placeholder file for images directory.
+
+For demo purposes, you can add the following sample images:
+- red-apple.jpg: An image of a red apple
+- cat.jpg: An image of a cat
+- house.jpg: An image of a house
+
+These images should be placed in this directory to match the JSON data references.

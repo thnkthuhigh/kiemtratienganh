@@ -1,0 +1,28 @@
+<svg width="200" height="200" xmlns="http://www.w3.org/2000/svg">
+  <!-- Cat body -->
+  <ellipse cx="100" cy="140" rx="40" ry="30" fill="#ffa500" stroke="#ff8c00" stroke-width="2"/>
+  <!-- Cat head -->
+  <circle cx="100" cy="90" r="35" fill="#ffa500" stroke="#ff8c00" stroke-width="2"/>
+  <!-- Cat ears -->
+  <polygon points="75,65 85,45 95,65" fill="#ffa500" stroke="#ff8c00" stroke-width="2"/>
+  <polygon points="105,65 115,45 125,65" fill="#ffa500" stroke="#ff8c00" stroke-width="2"/>
+  <!-- Inner ears -->
+  <polygon points="78,60 85,50 92,60" fill="#ffb366"/>
+  <polygon points="108,60 115,50 122,60" fill="#ffb366"/>
+  <!-- Cat eyes -->
+  <ellipse cx="90" cy="85" rx="5" ry="8" fill="#000"/>
+  <ellipse cx="110" cy="85" rx="5" ry="8" fill="#000"/>
+  <!-- Cat nose -->
+  <polygon points="100,95 95,100 105,100" fill="#ff69b4"/>
+  <!-- Cat mouth -->
+  <path d="M 100 102 Q 95 108 90 105" stroke="#000" stroke-width="2" fill="none"/>
+  <path d="M 100 102 Q 105 108 110 105" stroke="#000" stroke-width="2" fill="none"/>
+  <!-- Cat whiskers -->
+  <line x1="70" y1="85" x2="85" y2="88" stroke="#000" stroke-width="1"/>
+  <line x1="70" y1="95" x2="85" y2="95" stroke="#000" stroke-width="1"/>
+  <line x1="115" y1="88" x2="130" y2="85" stroke="#000" stroke-width="1"/>
+  <line x1="115" y1="95" x2="130" y2="95" stroke="#000" stroke-width="1"/>
+  <!-- Cat tail -->
+  <ellipse cx="140" cy="145" rx="8" ry="25" fill="#ffa500" stroke="#ff8c00" stroke-width="2" transform="rotate(30 140 145)"/>
+  <text x="100" y="185" text-anchor="middle" font-family="Arial" font-size="16" fill="#333">Cat</text>
+</svg>

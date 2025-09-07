@@ -1,0 +1,8 @@
+<svg width="200" height="200" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="100" cy="120" r="70" fill="#ff4444" stroke="#cc3333" stroke-width="2"/>
+  <ellipse cx="100" cy="110" rx="60" ry="65" fill="#ff6666"/>
+  <ellipse cx="85" cy="100" rx="25" ry="30" fill="#ff8888" opacity="0.7"/>
+  <rect x="95" y="50" width="10" height="20" fill="#8B4513" rx="3"/>
+  <ellipse cx="110" cy="45" rx="15" ry="8" fill="#228B22"/>
+  <text x="100" y="180" text-anchor="middle" font-family="Arial" font-size="16" fill="#333">Red Apple</text>
+</svg>

@@ -1,0 +1,9 @@
+# Tạo file .env với nội dung này
+MONGODB_URI=mongodb+srv://thankthuhigh:YOUR_ACTUAL_PASSWORD@cluster0.bpqowys.mongodb.net/examenglish?retryWrites=true&w=majority&appName=Cluster0
+PORT=5000
+NODE_ENV=development
+
+# Hướng dẫn:
+# 1. Tạo file mới tên .env (không có extension)
+# 2. Copy 3 dòng đầu vào file .env
+# 3. Thay YOUR_ACTUAL_PASSWORD bằng mật khẩu thực tế

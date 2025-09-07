@@ -1,0 +1,175 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom animations and styles for the quiz app */
+@keyframes pulse-success {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+@keyframes shake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-5px);
+  }
+  75% {
+    transform: translateX(5px);
+  }
+}
+
+/* Custom utility classes */
+.animate-pulse-success {
+  animation: pulse-success 0.5s ease-in-out;
+}
+
+.animate-shake {
+  animation: shake 0.5s ease-in-out;
+}
+
+/* Smooth scrolling for better UX */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Custom focus styles for better accessibility */
+button:focus {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+/* Custom loading spinner styles */
+.spinner {
+  border: 4px solid #f3f4f6;
+  border-top: 4px solid #3b82f6;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Image loading placeholder */
+.image-placeholder {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: loading 1.5s infinite;
+}
+
+@keyframes loading {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* Responsive font sizes */
+@media (max-width: 640px) {
+  .text-4xl {
+    font-size: 2rem;
+  }
+  .text-3xl {
+    font-size: 1.875rem;
+  }
+  .text-2xl {
+    font-size: 1.5rem;
+  }
+}
+
+/* Custom styles for quiz options */
+.quiz-option {
+  transition: all 0.2s ease-in-out;
+}
+
+.quiz-option:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.quiz-option.selected {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+
+.quiz-option.correct {
+  animation: pulse-success 0.5s ease-in-out;
+}
+
+.quiz-option.incorrect {
+  animation: shake 0.5s ease-in-out;
+}
+
+/* Reading passage styles */
+.reading-passage {
+  line-height: 1.8;
+  font-size: 16px;
+}
+
+.reading-passage p {
+  margin-bottom: 1rem;
+}
+
+.reading-passage h1, .reading-passage h2, .reading-passage h3 {
+  font-weight: bold;
+  margin-bottom: 0.5rem;
+  margin-top: 1.5rem;
+}
+
+.reading-passage h1 {
+  font-size: 1.5rem;
+}
+
+.reading-passage h2 {
+  font-size: 1.3rem;
+}
+
+.reading-passage h3 {
+  font-size: 1.1rem;
+}
+
+/* Highlight passage container */
+.passage-container {
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border: 1px solid #e2e8f0;
+  position: relative;
+  overflow: hidden;
+}
+
+.passage-container::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 100%;
+  background: linear-gradient(180deg, #3b82f6, #1d4ed8);
+}
+
+/* Enhanced typography for better readability */
+.passage-text {
+  text-align: justify;
+  hyphens: auto;
+  word-spacing: 0.1em;
+}
+
+/* Mobile responsive adjustments for passages */
+@media (max-width: 768px) {
+  .reading-passage {
+    font-size: 14px;
+    line-height: 1.6;
+  }
+  
+  .passage-text {
+    text-align: left;
+  }
+}
