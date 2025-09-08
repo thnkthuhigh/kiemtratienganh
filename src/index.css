@@ -2,6 +2,74 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Custom styles for question progress */
+.question-progress {
+  @apply flex flex-wrap gap-2 justify-center max-w-full overflow-auto;
+}
+
+.question-circle {
+  @apply w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium transition-all duration-200 cursor-pointer;
+  min-width: 2.5rem;
+  min-height: 2.5rem;
+}
+
+.question-circle.answered {
+  @apply bg-green-500 text-white shadow-md;
+}
+
+.question-circle.current {
+  @apply bg-blue-500 text-white shadow-md;
+}
+
+.question-circle.unanswered {
+  @apply bg-gray-200 text-gray-600;
+}
+
+.question-circle:hover {
+  @apply transform scale-105;
+}
+
+/* Responsive adjustments */
+@media (max-width: 640px) {
+  .question-progress {
+    @apply gap-1;
+  }
+  
+  .question-circle {
+    @apply w-8 h-8 text-xs;
+    min-width: 2rem;
+    min-height: 2rem;
+  }
+}
+
+/* Notes panel */
+.notes-panel {
+  @apply sticky top-4;
+  max-height: calc(100vh - 2rem);
+}
+
+/* Audio controls styling */
+audio {
+  @apply w-full;
+}
+
+audio::-webkit-media-controls-panel {
+  @apply bg-gray-100;
+}
+
+/* Smooth transitions for answer options */
+.answer-option {
+  @apply transition-all duration-200 transform;
+}
+
+.answer-option:hover {
+  @apply scale-105;
+}
+
+.answer-option.selected {
+  @apply shadow-lg;
+}
+
 /* Custom animations and styles for the quiz app */
 @keyframes pulse-success {
   0%, 100% {
@@ -160,6 +228,22 @@ button:focus {
   text-align: justify;
   hyphens: auto;
   word-spacing: 0.1em;
+}
+
+/* Fade-in animation for explanation */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out;
 }
 
 /* Mobile responsive adjustments for passages */

@@ -1,6 +1,6 @@
 {
-  "name": "react-vite-tailwind-demo",
-  "version": "0.0.1",
+  "name": "english-quiz-frontend",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -15,12 +15,8 @@
   "dependencies": {
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "mongoose": "^8.0.0",
     "axios": "^1.5.0",
-    "react-router-dom": "^6.8.0",
-    "express": "^4.18.0",
-    "cors": "^2.8.5",
-    "dotenv": "^16.3.0"
+    "react-router-dom": "^6.8.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^5.0.2",
@@ -29,5 +25,8 @@
     "tailwindcss": "^3.3.2",
     "vite": "^4.0.0",
     "concurrently": "^8.2.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }

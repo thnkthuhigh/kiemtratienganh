@@ -23,7 +23,11 @@ const questionSchema = new mongoose.Schema({
   },
   blanks: [{
     type: String
-  }]
+  }],
+  explanation: {
+    type: String,
+    default: ''
+  }
 });
 
 const exerciseSchema = new mongoose.Schema({
@@ -66,12 +70,45 @@ const exerciseSchema = new mongoose.Schema({
   image: {
     type: String
   },
+  explanation: {
+    type: String,
+    default: ''
+  },
   isActive: {
     type: Boolean,
     default: true
   }
 }, {
   timestamps: true
+});
+
+// Pre-save middleware to auto-generate ID if not provided
+exerciseSchema.pre('save', async function(next) {
+  if (!this.id || this.id === '') {
+    try {
+      // Find all exercises in the same category
+      const categoryExercises = await this.constructor.find({ 
+        category: this.category 
+      }).sort({ createdAt: 1 });
+      
+      let maxId = 0;
+      categoryExercises.forEach(exercise => {
+        const match = exercise.id.match(new RegExp(`${this.category}-(\\d+)`));
+        if (match) {
+          const num = parseInt(match[1]);
+          if (num > maxId) {
+            maxId = num;
+          }
+        }
+      });
+      
+      this.id = `${this.category}-${maxId + 1}`;
+    } catch (error) {
+      console.error('Error generating auto ID:', error);
+      return next(error);
+    }
+  }
+  next();
 });
 
 // Index for better query performance

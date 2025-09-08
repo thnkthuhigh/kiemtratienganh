@@ -9,6 +9,8 @@ function AdminAddExercise() {
 
   const [loading, setLoading] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('reading');
+  const [audioFile, setAudioFile] = useState(null);
+  const [imageFile, setImageFile] = useState(null);
   
   // Form data state
   const [exerciseData, setExerciseData] = useState({
@@ -23,14 +25,44 @@ function AdminAddExercise() {
     question: '',
     options: ['', '', '', ''],
     correct: 'A',
-    image: ''
+    image: '',
+    explanation: ''
   });
 
   useEffect(() => {
     if (isEditing) {
       loadExercise();
+    } else {
+      // Generate auto-increment ID for new exercises
+      generateAutoId();
     }
-  }, [id, isEditing]);
+  }, [id, isEditing, selectedCategory]);
+
+  const generateAutoId = async () => {
+    try {
+      const allExercises = await exerciseAPI.getAllForAdmin();
+      const categoryExercises = allExercises.filter(ex => ex.category === selectedCategory);
+      
+      let maxId = 0;
+      categoryExercises.forEach(exercise => {
+        // Extract number from ID like "reading-1", "listening-2", etc.
+        const match = exercise.id.match(new RegExp(`${selectedCategory}-(\\d+)`));
+        if (match) {
+          const num = parseInt(match[1]);
+          if (num > maxId) {
+            maxId = num;
+          }
+        }
+      });
+      
+      const newId = `${selectedCategory}-${maxId + 1}`;
+      setExerciseData(prev => ({ ...prev, id: newId }));
+    } catch (error) {
+      console.error('Error generating auto ID:', error);
+      // Fallback to manual ID
+      setExerciseData(prev => ({ ...prev, id: `${selectedCategory}-1` }));
+    }
+  };
 
   const loadExercise = async () => {
     try {
@@ -67,8 +99,11 @@ function AdminAddExercise() {
       questions: category === 'clozetext' ? [] : [createNewQuestion(category)],
       question: '',
       options: ['', '', '', ''],
-      correct: 'A'
+      correct: 'A',
+      image: ''
     }));
+    // Generate new auto ID for the new category
+    setTimeout(generateAutoId, 100);
   };
 
   const createNewQuestion = (category) => {
@@ -77,7 +112,8 @@ function AdminAddExercise() {
       question: '',
       type: 'multiple-choice',
       options: ['', '', '', ''],
-      correct: 'A'
+      correct: 'A',
+      explanation: ''
     };
 
     if (category === 'listening') {
@@ -149,16 +185,91 @@ function AdminAddExercise() {
     }));
   };
 
+  // Handle audio file upload
+  const handleAudioUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setAudioFile(file);
+      // Generate filename and set URL
+      const fileName = `listening-${Date.now()}-${file.name}`;
+      setExerciseData(prev => ({
+        ...prev,
+        audioUrl: `/audio/listening/${fileName}`
+      }));
+    }
+  };
+
+  // Handle image file upload for cloze test
+  const handleImageUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setImageFile(file);
+      // Generate filename and set URL
+      const fileName = `cloze-${Date.now()}-${file.name}`;
+      setExerciseData(prev => ({
+        ...prev,
+        image: `/images/${fileName}`
+      }));
+    }
+  };
+
+  // Upload file to server
+  const uploadFile = async (file, path) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    try {
+      const response = await fetch(`/api/upload${path}`, {
+        method: 'POST',
+        body: formData
+      });
+      
+      if (!response.ok) {
+        throw new Error('Upload failed');
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error('Error uploading file:', error);
+      throw error;
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     
     try {
       setLoading(true);
       
-      // Prepare data based on category
+      // Prepare data with current values
       let dataToSubmit = { ...exerciseData };
       
-      // For clozetext, ensure we don't send title if it's empty
+      // Upload files first if they exist and update paths
+      if (audioFile) {
+        try {
+          const response = await uploadFile(audioFile, '/audio');
+          if (response.path) {
+            dataToSubmit.audioUrl = response.path;
+          }
+        } catch (error) {
+          console.error('Error uploading audio:', error);
+          alert('Có lỗi khi upload file âm thanh');
+          return;
+        }
+      }
+
+      if (imageFile) {
+        try {
+          const response = await uploadFile(imageFile, '/image');
+          if (response.path) {
+            dataToSubmit.image = response.path;
+          }
+        } catch (error) {
+          console.error('Error uploading image:', error);
+          alert('Có lỗi khi upload hình ảnh');
+          return;
+        }
+      }      // For clozetext, ensure we don't send title if it's empty
       if (selectedCategory === 'clozetext') {
         if (!dataToSubmit.title || dataToSubmit.title.trim() === '') {
           delete dataToSubmit.title;
@@ -276,7 +387,13 @@ function AdminAddExercise() {
                 onChange={(e) => setExerciseData(prev => ({ ...prev, id: e.target.value }))}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500"
                 placeholder="Ví dụ: reading-1"
+                disabled={!isEditing}
               />
+              {!isEditing && (
+                <p className="text-sm text-gray-500 mt-1">
+                  ID được tự động tạo dựa trên loại bài tập
+                </p>
+              )}
             </div>
             
             {selectedCategory !== 'clozetext' && (
@@ -317,16 +434,19 @@ function AdminAddExercise() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  URL Audio
+                  Upload File Audio
                 </label>
                 <input
-                  type="url"
-                  value={exerciseData.audioUrl}
-                  onChange={(e) => setExerciseData(prev => ({ ...prev, audioUrl: e.target.value }))}
+                  type="file"
+                  accept="audio/*"
+                  onChange={handleAudioUpload}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500"
-                  placeholder="/audio/filename.mp3"
-                  required
                 />
+                {exerciseData.audioUrl && (
+                  <p className="text-sm text-green-600 mt-1">
+                    File sẽ được lưu tại: {exerciseData.audioUrl}
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -402,6 +522,47 @@ function AdminAddExercise() {
                   <option value="D">D</option>
                 </select>
               </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Giải Thích (tùy chọn)
+                </label>
+                <textarea
+                  value={exerciseData.explanation || ''}
+                  onChange={(e) => setExerciseData(prev => ({ ...prev, explanation: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500"
+                  placeholder="Nhập giải thích cho đáp án..."
+                  rows="3"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Hình Ảnh (Tùy chọn)
+                </label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageUpload}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500"
+                />
+                {exerciseData.image && (
+                  <div className="mt-2">
+                    <p className="text-sm text-green-600 mb-1">
+                      File sẽ được lưu tại: {exerciseData.image}
+                    </p>
+                    {imageFile && (
+                      <div className="mt-2">
+                        <img 
+                          src={URL.createObjectURL(imageFile)} 
+                          alt="Preview" 
+                          className="max-w-xs rounded border"
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -464,47 +625,79 @@ function AdminAddExercise() {
                   </div>
 
                   {question.type === 'fill-blank' && (
-                    <div className="mb-4">
-                      <div className="flex justify-between items-center mb-2">
-                        <label className="block text-sm font-medium text-gray-700">
-                          Đáp Án Điền Vào Chỗ Trống
-                        </label>
-                        <button
-                          type="button"
-                          onClick={() => addBlankToQuestion(qIndex)}
-                          className="text-sm bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded"
-                        >
-                          + Thêm Chỗ Trống
-                        </button>
+                    <>
+                      <div className="mb-4">
+                        <div className="flex justify-between items-center mb-2">
+                          <label className="block text-sm font-medium text-gray-700">
+                            Đáp Án Điền Vào Chỗ Trống
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => addBlankToQuestion(qIndex)}
+                            className="text-sm bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded"
+                          >
+                            + Thêm Chỗ Trống
+                          </button>
+                        </div>
+                        {(question.blanks || []).map((blank, bIndex) => (
+                          <input
+                            key={bIndex}
+                            type="text"
+                            value={blank}
+                            onChange={(e) => updateQuestionBlank(qIndex, bIndex, e.target.value)}
+                            className="w-full border border-gray-300 rounded px-3 py-2 mb-2 focus:outline-none focus:border-indigo-500"
+                            placeholder={`Đáp án cho chỗ trống ${bIndex + 1}`}
+                          />
+                        ))}
                       </div>
-                      {(question.blanks || []).map((blank, bIndex) => (
-                        <input
-                          key={bIndex}
-                          type="text"
-                          value={blank}
-                          onChange={(e) => updateQuestionBlank(qIndex, bIndex, e.target.value)}
-                          className="w-full border border-gray-300 rounded px-3 py-2 mb-2 focus:outline-none focus:border-indigo-500"
-                          placeholder={`Đáp án cho chỗ trống ${bIndex + 1}`}
+
+                      {/* Explanation field */}
+                      <div className="mb-4">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Giải Thích (tùy chọn)
+                        </label>
+                        <textarea
+                          value={question.explanation || ''}
+                          onChange={(e) => updateQuestion(qIndex, 'explanation', e.target.value)}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500"
+                          placeholder="Nhập giải thích cho đáp án..."
+                          rows="3"
                         />
-                      ))}
-                    </div>
+                      </div>
+                    </>
                   )}
 
                   {question.type === 'true-false' && (
-                    <div className="mb-4">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Đáp Án Đúng
-                      </label>
-                      <select
-                        value={question.correct}
-                        onChange={(e) => updateQuestion(qIndex, 'correct', e.target.value)}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500"
-                        required
-                      >
-                        <option value="true">True</option>
-                        <option value="false">False</option>
-                      </select>
-                    </div>
+                    <>
+                      <div className="mb-4">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Đáp Án Đúng
+                        </label>
+                        <select
+                          value={question.correct}
+                          onChange={(e) => updateQuestion(qIndex, 'correct', e.target.value)}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500"
+                          required
+                        >
+                          <option value="true">True</option>
+                          <option value="false">False</option>
+                        </select>
+                      </div>
+
+                      {/* Explanation field */}
+                      <div className="mb-4">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Giải Thích (tùy chọn)
+                        </label>
+                        <textarea
+                          value={question.explanation || ''}
+                          onChange={(e) => updateQuestion(qIndex, 'explanation', e.target.value)}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500"
+                          placeholder="Nhập giải thích cho đáp án..."
+                          rows="3"
+                        />
+                      </div>
+                    </>
                   )}
 
                   {question.type === 'multiple-choice' && (
@@ -547,6 +740,20 @@ function AdminAddExercise() {
                           <option value="C">C</option>
                           <option value="D">D</option>
                         </select>
+                      </div>
+
+                      {/* Explanation field */}
+                      <div className="mb-4">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Giải Thích (tùy chọn)
+                        </label>
+                        <textarea
+                          value={question.explanation || ''}
+                          onChange={(e) => updateQuestion(qIndex, 'explanation', e.target.value)}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500"
+                          placeholder="Nhập giải thích cho đáp án..."
+                          rows="3"
+                        />
                       </div>
                     </>
                   )}
