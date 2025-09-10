@@ -9,7 +9,9 @@
     "server": "node server/index.js",
     "dev:full": "concurrently \"npm run server\" \"npm run dev\"",
     "migrate": "node server/scripts/migrate-data.js",
+    "migrate-stats": "node server/scripts/migrate-user-stats.js",
     "test-db": "node server/scripts/test-connection.js",
+    "test-server": "node test-server.js",
     "create-env": "node create-env.js"
   },
   "dependencies": {

@@ -162,6 +162,11 @@ userSchema.index({ 'stats.questionPerformance.successRate': 1 });
 userSchema.methods.updateQuestionPerformance = function(questionData, isCorrect, timeSpent = 0) {
   const { questionId, exerciseId, category, questionType, question } = questionData;
   
+  // Ensure questionPerformance array exists
+  if (!this.stats.questionPerformance) {
+    this.stats.questionPerformance = [];
+  }
+  
   // Tìm câu hỏi trong questionPerformance
   let questionPerf = this.stats.questionPerformance.find(
     q => q.questionId === questionId && q.exerciseId === exerciseId
@@ -218,6 +223,11 @@ userSchema.methods.updateQuestionPerformance = function(questionData, isCorrect,
 
 // Phương thức để lấy câu hỏi ưu tiên
 userSchema.methods.getPriorityQuestions = function(category = null, limit = 10) {
+  // Ensure questionPerformance exists
+  if (!this.stats.questionPerformance) {
+    return [];
+  }
+  
   let questions = this.stats.questionPerformance;
   
   // Lọc theo category nếu có
@@ -253,17 +263,27 @@ userSchema.methods.getPriorityQuestions = function(category = null, limit = 10) 
 
 // Phương thức để lấy thống kê tổng quan
 userSchema.methods.getPerformanceStats = function() {
-  const stats = this.stats;
-  const performance = stats.questionPerformance;
+  const stats = this.stats || {};
+  const performance = stats.questionPerformance || [];
+  
+  // Ensure answerHistory exists and is an array
+  const answerHistory = Array.isArray(stats.answerHistory) ? stats.answerHistory : [];
+  
+  // Ensure categoryStats exists
+  const categoryStats = stats.categoryStats || {
+    reading: { total: 0, correct: 0 },
+    listening: { total: 0, correct: 0 },
+    clozetext: { total: 0, correct: 0 }
+  };
   
   return {
-    totalQuestions: stats.totalQuestions,
-    correctAnswers: stats.correctAnswers,
-    successRate: stats.totalQuestions > 0 ? (stats.correctAnswers / stats.totalQuestions) * 100 : 0,
+    totalQuestions: stats.totalQuestions || 0,
+    correctAnswers: stats.correctAnswers || 0,
+    successRate: (stats.totalQuestions || 0) > 0 ? ((stats.correctAnswers || 0) / (stats.totalQuestions || 0)) * 100 : 0,
     weakPoints: performance.filter(q => q.isWeakPoint).length,
     needsReview: performance.filter(q => q.needsReview).length,
-    categoryBreakdown: stats.categoryStats,
-    recentActivity: stats.answerHistory.slice(-10),
+    categoryBreakdown: categoryStats,
+    recentActivity: answerHistory.slice(-10),
     priorityQuestions: this.getPriorityQuestions(null, 5)
   };
 };

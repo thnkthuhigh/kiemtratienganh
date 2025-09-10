@@ -4,6 +4,7 @@ import { exerciseAPI, userAPI } from './services/api.js';
 import AdminDashboard from './components/AdminDashboard';
 import AdminAddExercise from './components/AdminAddExercise';
 import UserStats from './components/UserStats';
+import DebugStats from './components/DebugStats';
 import React from 'react';
 
 // Error Boundary Component
@@ -256,34 +257,60 @@ function QuizApp() {
     window.location.reload();
   };
 
-  const loadUserFromStorage = () => {
+  const loadUserFromStorage = async () => {
     try {
       const savedUser = localStorage.getItem('quizUser');
       
       if (savedUser && savedUser !== 'undefined' && savedUser !== 'null') {
         const userData = JSON.parse(savedUser);
         if (userData && typeof userData === 'object') {
+          console.log('👤 Loading user from storage:', userData.username);
           setUser(userData);
           
-          // Load user-specific stats
+          // Always try to load fresh stats from database first
+          try {
+            if (userData._id) {
+              console.log('🔄 Loading user stats from database for ID:', userData._id);
+              const statsResponse = await userAPI.getStats(userData._id);
+              if (statsResponse.success) {
+                console.log('✅ Loaded stats from database:', statsResponse.stats);
+                setUserStats(statsResponse.stats);
+                saveUserToStorage(userData, statsResponse.stats);
+                return;
+              } else {
+                console.log('⚠️ Database stats load failed:', statsResponse);
+              }
+            }
+          } catch (error) {
+            console.log('⚠️ Could not load stats from database, using local storage:', error.message);
+          }
+          
+          // Fallback to localStorage if database fails
           const savedStats = localStorage.getItem(`userStats_${userData.id}`);
           if (savedStats && savedStats !== 'undefined' && savedStats !== 'null') {
-            const statsData = JSON.parse(savedStats);
-            // Ensure all required fields exist and are correct types
-            if (statsData && typeof statsData === 'object') {
-              const validStats = {
-                userId: statsData.userId || userData.id,
-                totalQuestions: Number(statsData.totalQuestions) || 0,
-                correctAnswers: Number(statsData.correctAnswers) || 0,
-                wrongAnswers: Array.isArray(statsData.wrongAnswers) ? statsData.wrongAnswers : [],
-                frequentlyWrong: Array.isArray(statsData.frequentlyWrong) ? statsData.frequentlyWrong : [],
-                categoryStats: statsData.categoryStats || {
-                  reading: { total: 0, correct: 0 },
-                  listening: { total: 0, correct: 0 },
-                  clozetext: { total: 0, correct: 0 }
-                }
-              };
-              setUserStats(validStats);
+            try {
+              const statsData = JSON.parse(savedStats);
+              // Ensure all required fields exist and are correct types
+              if (statsData && typeof statsData === 'object') {
+                const validStats = {
+                  userId: statsData.userId || userData.id,
+                  totalQuestions: Number(statsData.totalQuestions) || 0,
+                  correctAnswers: Number(statsData.correctAnswers) || 0,
+                  wrongAnswers: Array.isArray(statsData.wrongAnswers) ? statsData.wrongAnswers : [],
+                  frequentlyWrong: Array.isArray(statsData.frequentlyWrong) ? statsData.frequentlyWrong : [],
+                  answerHistory: Array.isArray(statsData.answerHistory) ? statsData.answerHistory : [],
+                  questionPerformance: Array.isArray(statsData.questionPerformance) ? statsData.questionPerformance : [],
+                  categoryStats: statsData.categoryStats || {
+                    reading: { total: 0, correct: 0 },
+                    listening: { total: 0, correct: 0 },
+                    clozetext: { total: 0, correct: 0 }
+                  }
+                };
+                console.log('📊 Loaded local stats:', validStats);
+                setUserStats(validStats);
+              }
+            } catch (error) {
+              console.error('Error parsing local stats:', error);
             }
           } else {
             // Create default stats if none exist
@@ -293,12 +320,15 @@ function QuizApp() {
               correctAnswers: 0,
               wrongAnswers: [],
               frequentlyWrong: [],
+              answerHistory: [],
+              questionPerformance: [],
               categoryStats: {
                 reading: { total: 0, correct: 0 },
                 listening: { total: 0, correct: 0 },
                 clozetext: { total: 0, correct: 0 }
               }
             };
+            console.log('📊 Created default stats:', defaultStats);
             setUserStats(defaultStats);
           }
         }
@@ -372,68 +402,156 @@ function QuizApp() {
     }
 
     try {
+      console.log('🔐 Attempting login for user:', username);
       const response = await userAPI.login({
         username,
         password
       });
 
       if (response.success) {
+        console.log('✅ Login successful for user:', response.user.username);
         setUser(response.user);
-        setUserStats(response.user.stats);
-        saveUserToStorage(response.user, response.user.stats);
+        
+        // Load user stats from database after login
+        try {
+          const userId = response.user._id;
+          console.log('📊 Loading stats for user ID:', userId);
+          const statsResponse = await userAPI.getStats(userId);
+          if (statsResponse.success) {
+            console.log('✅ Stats loaded successfully:', statsResponse.stats);
+            setUserStats(statsResponse.stats);
+            saveUserToStorage(response.user, statsResponse.stats);
+          } else {
+            console.log('⚠️ Stats load failed, using default stats');
+            // Fallback to user stats from login response or create default
+            const defaultStats = response.user.stats || {
+              userId: response.user._id,
+              totalQuestions: 0,
+              correctAnswers: 0,
+              wrongAnswers: [],
+              frequentlyWrong: [],
+              answerHistory: [],
+              questionPerformance: [],
+              categoryStats: {
+                reading: { total: 0, correct: 0 },
+                listening: { total: 0, correct: 0 },
+                clozetext: { total: 0, correct: 0 }
+              }
+            };
+            setUserStats(defaultStats);
+            saveUserToStorage(response.user, defaultStats);
+          }
+        } catch (statsError) {
+          console.error('❌ Error loading user stats:', statsError);
+          // Fallback to user stats from login response or create default
+          const defaultStats = response.user.stats || {
+            userId: response.user._id,
+            totalQuestions: 0,
+            correctAnswers: 0,
+            wrongAnswers: [],
+            frequentlyWrong: [],
+            answerHistory: [],
+            questionPerformance: [],
+            categoryStats: {
+              reading: { total: 0, correct: 0 },
+              listening: { total: 0, correct: 0 },
+              clozetext: { total: 0, correct: 0 }
+            }
+          };
+          setUserStats(defaultStats);
+          saveUserToStorage(response.user, defaultStats);
+        }
+        
         setShowAuth(false);
         alert(response.message);
       }
     } catch (error) {
+      console.error('❌ Login error:', error);
       const errorMessage = error.response?.data?.error || 'Có lỗi xảy ra khi đăng nhập!';
       alert(errorMessage);
     }
   };
 
   const handleLogout = () => {
-    if (user) {
-      // Remove user-specific stats
-      localStorage.removeItem(`userStats_${user.id}`);
-    }
+    console.log('🚪 Logging out user:', user?.username);
+    // Don't remove user data from localStorage on logout
+    // Just clear the current session state
     setUser(null);
     setUserStats(null);
+    // Remove only the current session flag
     localStorage.removeItem('quizUser');
-    // Remove old userStats key if it exists (backward compatibility)
-    localStorage.removeItem('userStats');
+    // Keep user-specific stats in localStorage for faster loading next time
   };
 
   // Update user statistics
   const updateUserStats = async (results) => {
-    if (!user || !userStats) return;
+    if (!user || !userStats) {
+      console.log('⚠️ Cannot update stats: user or userStats missing');
+      return;
+    }
+
+    console.log('📊 Updating user stats for user:', user.username, 'with', results.length, 'results');
 
     try {
-      // Prepare results for API
+      // Prepare results for API - ensure all required fields are present
       const apiResults = results.map(result => ({
         id: result.id,
         exerciseId: result.exerciseId || result.id,
         category: result.category,
-        type: result.type,
-        question: result.question,
+        type: result.type || 'multiple-choice',
+        question: result.question || result.questionText,
         userAnswer: result.userAnswer,
         correctAnswer: result.correctAnswer,
         isCorrect: result.isCorrect
       }));
 
+      // Use user._id (MongoDB ObjectId) for API calls
+      const userId = user._id || user.id;
+      console.log('🔑 Using user ID:', userId);
+      console.log('📝 Sending results:', apiResults);
+      console.log('⏱️ Time spent data:', questionTimeSpent);
+
       // Update stats via API with time tracking
-      const response = await userAPI.updateStats(user._id, apiResults, questionTimeSpent);
+      const response = await userAPI.updateStats(userId, apiResults, questionTimeSpent);
       
       if (response.success) {
+        console.log('✅ Stats updated successfully via API:', response.stats);
         setUserStats(response.stats);
         saveUserToStorage(user, response.stats);
+        
+        // Clear time tracking after successful update
+        setQuestionTimeSpent({});
+        setQuestionStartTime({});
+      } else {
+        throw new Error('API response indicates failure');
       }
     } catch (error) {
-      console.error('Error updating user stats:', error);
+      console.error('❌ Error updating user stats via API:', error);
       
       // Fallback to local update if API fails
-      const newStats = { ...userStats };
+      console.log('🔄 Falling back to local stats update');
+      const newStats = { 
+        ...userStats,
+        // Ensure all required fields exist
+        totalQuestions: userStats.totalQuestions || 0,
+        correctAnswers: userStats.correctAnswers || 0,
+        wrongAnswers: userStats.wrongAnswers || [],
+        frequentlyWrong: userStats.frequentlyWrong || [],
+        categoryStats: userStats.categoryStats || {
+          reading: { total: 0, correct: 0 },
+          listening: { total: 0, correct: 0 },
+          clozetext: { total: 0, correct: 0 }
+        }
+      };
       
       results.forEach(result => {
         newStats.totalQuestions++;
+        
+        // Ensure category exists
+        if (!newStats.categoryStats[result.category]) {
+          newStats.categoryStats[result.category] = { total: 0, correct: 0 };
+        }
+        
         newStats.categoryStats[result.category].total++;
         
         if (result.isCorrect) {
@@ -443,7 +561,7 @@ function QuizApp() {
           // Track wrong answers
           const wrongAnswer = {
             questionId: result.id,
-            question: result.question,
+            question: result.question || result.questionText,
             category: result.category,
             userAnswer: result.userAnswer,
             correctAnswer: result.correctAnswer,
@@ -460,7 +578,7 @@ function QuizApp() {
           } else {
             newStats.frequentlyWrong.push({
               questionId: result.id,
-              question: result.question,
+              question: result.question || result.questionText,
               category: result.category,
               count: 1,
               lastAttempt: new Date().toISOString()
@@ -479,11 +597,17 @@ function QuizApp() {
 
   // Question Selection Functions
   const toggleQuestionSelection = (questionId) => {
-    setSelectedQuestionIds(prev => 
-      prev.includes(questionId)
+    console.log('🎯 Toggle question selection:', questionId);
+    console.log('📋 Current selected IDs before:', selectedQuestionIds);
+    
+    setSelectedQuestionIds(prev => {
+      const newSelection = prev.includes(questionId)
         ? prev.filter(id => id !== questionId)
-        : [...prev, questionId]
-    );
+        : [...prev, questionId];
+      
+      console.log('📋 New selected IDs:', newSelection);
+      return newSelection;
+    });
   };
 
   const selectAllQuestionsInCategory = (category) => {
@@ -508,6 +632,10 @@ function QuizApp() {
   };
 
   const startCustomQuiz = () => {
+    console.log('🎯 Starting custom quiz...');
+    console.log('📋 Selected question IDs:', selectedQuestionIds);
+    console.log('📚 All available questions:', allAvailableQuestions.length);
+    
     if (selectedQuestionIds.length === 0) {
       alert('Vui lòng chọn ít nhất một câu hỏi!');
       return;
@@ -516,54 +644,59 @@ function QuizApp() {
     // Filter selected questions
     let customQuestions = [];
     
-    selectedQuestionIds.forEach(questionId => {
+    selectedQuestionIds.forEach((questionId, index) => {
+      console.log(`🔍 Processing question ID: ${questionId}`);
       const question = allAvailableQuestions.find(q => q.id === questionId);
-      if (!question) return;
-
-      if (question.category === 'clozetest') {
-        // Find the actual clozetest question
-        const clozequestion = questionsData.clozetext?.find(q => q.id === question.id);
-        if (clozequestion) {
-          customQuestions.push({
-            ...clozequestion,
-            questionIndex: customQuestions.length,
-            questionType: 'clozetext',
-            category: 'clozetest',
-            exerciseId: clozequestion.id,
-            exerciseTitle: `Cloze Test ${clozequestion.id}`,
-            questionText: clozequestion.question,
-            displayIndex: customQuestions.length + 1
-          });
-        }
-      } else {
-        // Find the actual reading/listening question
-        const exercise = questionsData[question.category]?.find(ex => ex.id === question.exerciseId);
-        const actualQuestion = exercise?.questions?.find(q => q.id === question.questionId);
-        
-        if (actualQuestion && exercise) {
-          customQuestions.push({
-            ...actualQuestion,
-            questionIndex: customQuestions.length,
-            questionType: actualQuestion.type,
-            category: question.category,
-            exerciseId: exercise.id,
-            exerciseTitle: exercise.title,
-            questionText: actualQuestion.question,
-            passage: exercise.passage,
-            audioUrl: exercise.audioUrl,
-            transcript: exercise.transcript,
-            displayIndex: customQuestions.length + 1
-          });
-        }
+      
+      if (!question) {
+        console.warn(`⚠️ Question not found in allAvailableQuestions: ${questionId}`);
+        return;
       }
+      
+      console.log(`✅ Found question:`, question);
+
+      // Use the question data directly from allAvailableQuestions since it's already formatted
+      const customQuestion = {
+        id: question.id,
+        questionId: question.id,
+        exerciseId: question.exerciseId,
+        exerciseTitle: question.exerciseTitle,
+        category: question.category,
+        question: question.question,
+        questionText: question.question,
+        options: question.options || [],
+        correctAnswer: question.correctAnswer,
+        correct: question.correctAnswer, // Alternative property name
+        type: question.type || 'multiple-choice',
+        questionType: question.type || 'multiple-choice',
+        audioFile: question.audioFile,
+        questionIndex: customQuestions.length,
+        displayIndex: customQuestions.length + 1,
+        blanks: question.blanks || [],
+        answers: question.answers || [],
+        passage: question.passage || null,
+        image: question.image || null,
+        audioUrl: question.audioFile || null
+      };
+      
+      console.log(`✅ Created custom question:`, customQuestion);
+      customQuestions.push(customQuestion);
     });
+
+    console.log(`🎯 Final custom questions array (${customQuestions.length} questions):`, customQuestions);
+
+    if (customQuestions.length === 0) {
+      alert('Không thể tải câu hỏi đã chọn. Vui lòng thử lại!');
+      return;
+    }
 
     // Prioritize frequently wrong answers if enabled
     if (prioritizeWrongAnswers && userStats?.frequentlyWrong?.length > 0) {
+      console.log('🔄 Prioritizing frequently wrong answers...');
       const wrongQuestionIds = userStats.frequentlyWrong.map(w => w.questionId);
       customQuestions.sort((a, b) => {
-        const aIsWrong = wrongQuestionIds.includes(a.id || `${a.exerciseId}-${a.id}`);
-        const bIsWrong = wrongQuestionIds.includes(b.id || `${b.exerciseId}-${b.id}`);
+        const aIsWrong = wrongQuestionIds.includes(a.id || `${a.exerciseId}-${a.questionIndex}`);
+        const bIsWrong = wrongQuestionIds.includes(b.id || `${b.exerciseId}-${b.questionIndex}`);
         
         if (aIsWrong && !bIsWrong) return -1;
         if (!aIsWrong && bIsWrong) return 1;
@@ -579,6 +712,17 @@ function QuizApp() {
       isCustom: true
     }];
 
+    console.log('🚀 Starting quiz with:', {
+      category: 'custom',
+      exercise: customExercise,
+      totalQuestions: customQuestions.length
+    });
+
+    // Initialize time tracking
+    setQuizStartTime(Date.now());
+    setQuestionStartTime({});
+    setQuestionTimeSpent({});
+    
     setCurrentCategory('custom');
     setCurrentExercise(customExercise);
     setAllQuestions(customQuestions);
@@ -587,6 +731,7 @@ function QuizApp() {
     setQuestionNotes({});
     setScore(0);
     setQuizStarted(true);
+    setStepByStepMode(true); // Enable step-by-step mode for custom quiz
     setShowQuestionSelector(false);
     setSelectedAnswers({});
     setFillBlankAnswers({});
@@ -603,6 +748,8 @@ function QuizApp() {
 
   // Enhanced answer selection with immediate feedback
   const handleAnswerSelectWithNext = (exerciseId, questionId, answer) => {
+    console.log('📝 Answer selection:', { exerciseId, questionId, answer, currentQuestionIndex });
+    
     // ALWAYS use the same key format regardless of question type
     const key = `${exerciseId}-${questionId}`;
     
@@ -616,17 +763,58 @@ function QuizApp() {
       [key]: timeSpent
     }));
     
-    setSelectedAnswers(prev => ({
-      ...prev,
-      [key]: answer
-    }));
+    console.log('💾 Saving answer with key:', key, 'answer:', answer);
+    setSelectedAnswers(prev => {
+      const newAnswers = {
+        ...prev,
+        [key]: answer
+      };
+      console.log('💾 Updated selectedAnswers:', newAnswers);
+      return newAnswers;
+    });
 
     // Mark question as answered
-    setAnsweredQuestions(prev => new Set([...prev, currentQuestionIndex]));
+    setAnsweredQuestions(prev => {
+      const newSet = new Set([...prev, currentQuestionIndex]);
+      console.log('✅ Updated answeredQuestions:', Array.from(newSet));
+      return newSet;
+    });
 
     // Check if answer is correct
     const currentQuestion = allQuestions[currentQuestionIndex];
     const isCorrect = answer === (currentQuestion.correct || currentQuestion.correctAnswer);
+    
+    console.log('🎯 Answer check:', {
+      selectedAnswer: answer,
+      correctAnswer: currentQuestion.correct || currentQuestion.correctAnswer,
+      isCorrect
+    });
+    
+    // Store the answer result for detailed results
+    setCorrectAnswers(prev => {
+      const newResults = [...prev];
+      newResults[currentQuestionIndex] = {
+        questionIndex: currentQuestionIndex,
+        question: currentQuestion.question || currentQuestion.questionText,
+        selectedAnswer: answer,
+        correctAnswer: currentQuestion.correct || currentQuestion.correctAnswer,
+        isCorrect: isCorrect,
+        timeSpent: timeSpent,
+        category: currentQuestion.category,
+        exerciseTitle: currentQuestion.exerciseTitle
+      };
+      console.log('📊 Updated correctAnswers:', newResults);
+      return newResults;
+    });
+    
+    // Update score
+    if (isCorrect) {
+      setScore(prev => {
+        const newScore = prev + 1;
+        console.log('🎉 Score updated:', newScore);
+        return newScore;
+      });
+    }
     
     // Show result and explanation immediately
     setCurrentAnswerCorrect(isCorrect);
@@ -725,8 +913,23 @@ function QuizApp() {
                       : 'border-gray-200 hover:border-green-300 hover:bg-green-50'
                   }`}
                 >
-                  <span className="font-semibold mr-2">{optionLetter}.</span>
-                  {option}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center">
+                      <span className="font-semibold mr-2">{optionLetter}.</span>
+                      <span>{option}</span>
+                    </div>
+                    {/* Keyboard shortcut indicator for all-at-once mode */}
+                    {!isSelected && (
+                      <div className="flex space-x-1">
+                        <kbd className="px-1.5 py-0.5 text-xs bg-white rounded border text-gray-500">
+                          {optionLetter}
+                        </kbd>
+                        <kbd className="px-1.5 py-0.5 text-xs bg-white rounded border text-gray-500">
+                          {index + 1}
+                        </kbd>
+                      </div>
+                    )}
+                  </div>
                 </button>
               );
             })}
@@ -740,21 +943,47 @@ function QuizApp() {
   useEffect(() => {
     const loadExercises = async () => {
       try {
-        const data = await exerciseAPI.getAll();
+        console.log('🔄 Loading exercises from API...');
+        const response = await exerciseAPI.getAll();
+        console.log('📚 API Response:', response);
+        
+        let data = response;
+        
+        // Check if we got valid data from API
+        if (!data || !data.reading || !data.listening || !data.clozetext || 
+            (data.reading.length === 0 && data.listening.length === 0 && data.clozetext.length === 0)) {
+          console.log('⚠️ API returned empty data, falling back to JSON file...');
+          
+          // Fallback to JSON file
+          try {
+            const jsonResponse = await fetch('/questions.json');
+            data = await jsonResponse.json();
+            console.log('📚 Loaded from JSON file:', data);
+          } catch (jsonError) {
+            console.error('❌ Failed to load JSON fallback:', jsonError);
+            data = { reading: [], listening: [], clozetext: [] };
+          }
+        }
+        
         setQuestionsData(data);
         
         // Prepare all available questions for selection
         let allQuestions = [];
         Object.keys(data).forEach(category => {
+          console.log(`📂 Processing category: ${category}, exercises:`, data[category]?.length || 0);
           if (data[category]) {
             data[category].forEach(exercise => {
               if (category === 'clozetext') {
+                // Handle clozetext format
                 allQuestions.push({
                   id: exercise.id,
                   category: category,
                   question: exercise.question,
-                  exerciseTitle: `${category} - ${exercise.id}`,
-                  difficulty: exercise.difficulty || 'medium'
+                  options: exercise.options || [],
+                  correctAnswer: exercise.correct || exercise.correctAnswer,
+                  exerciseTitle: `Cloze Test ${exercise.id}`,
+                  type: 'multiple-choice',
+                  image: exercise.image || null
                 });
               } else {
                 exercise.questions?.forEach((question, index) => {
@@ -762,25 +991,74 @@ function QuizApp() {
                     id: `${exercise.id}-${question.id}`,
                     category: category,
                     question: question.question,
+                    options: question.options || [],
+                    correctAnswer: question.correct || question.correctAnswer,
                     exerciseTitle: `${exercise.title} - Q${index + 1}`,
                     exerciseId: exercise.id,
                     questionId: question.id,
-                    difficulty: question.difficulty || 'medium'
+                    type: 'multiple-choice'
                   });
                 });
               }
             });
           }
         });
+        console.log('🎯 Total available questions prepared:', allQuestions.length);
+        console.log('📋 Available questions:', allQuestions);
         setAllAvailableQuestions(allQuestions);
       } catch (error) {
-        console.error('Error loading exercises:', error);
-        // Fallback to empty data
-        setQuestionsData({
-          reading: [],
-          listening: [],
-          clozetext: []
-        });
+        console.error('❌ Error loading exercises from API:', error);
+        // Final fallback to empty data
+        try {
+          console.log('🔄 Attempting JSON fallback after API error...');
+          const jsonResponse = await fetch('/questions.json');
+          const data = await jsonResponse.json();
+          console.log('📚 Loaded from JSON file (after API error):', data);
+          setQuestionsData(data);
+          
+          // Process JSON data for allAvailableQuestions
+          let allQuestions = [];
+          Object.keys(data).forEach(category => {
+            if (data[category]) {
+              data[category].forEach(exercise => {
+                if (category === 'clozetext') {
+                  allQuestions.push({
+                    id: exercise.id,
+                    category: category,
+                    question: exercise.question,
+                    options: exercise.options || [],
+                    correctAnswer: exercise.correct || exercise.correctAnswer,
+                    exerciseTitle: `Cloze Test ${exercise.id}`,
+                    type: 'multiple-choice',
+                    image: exercise.image || null
+                  });
+                } else {
+                  exercise.questions?.forEach((question, index) => {
+                    allQuestions.push({
+                      id: `${exercise.id}-${question.id}`,
+                      category: category,
+                      question: question.question,
+                      options: question.options || [],
+                      correctAnswer: question.correct || question.correctAnswer,
+                      exerciseTitle: `${exercise.title} - Q${index + 1}`,
+                      exerciseId: exercise.id,
+                      questionId: question.id,
+                      type: 'multiple-choice'
+                    });
+                  });
+                }
+              });
+            }
+          });
+          setAllAvailableQuestions(allQuestions);
+        } catch (jsonError) {
+          console.error('❌ JSON fallback also failed:', jsonError);
+          setQuestionsData({
+            reading: [],
+            listening: [],
+            clozetext: []
+          });
+        }
       }
     };
     
@@ -788,7 +1066,247 @@ function QuizApp() {
     loadUserFromStorage();
   }, []);
 
-  // Start quiz with selected category and number of exercises
+  // Keyboard shortcuts for quiz
+  useEffect(() => {
+    const handleKeyPress = (event) => {
+      // Only handle keyboard shortcuts when quiz is active
+      if (!quizStarted || showResult) return;
+      
+      // Prevent default for our handled keys
+      const key = event.key.toLowerCase();
+      const isAnswerKey = ['a', 'b', 'c', 'd', '1', '2', '3', '4'].includes(key);
+      const isNavKey = ['enter', 'arrowright', 'arrowleft', ' '].includes(key);
+      
+      if (isAnswerKey || isNavKey) {
+        event.preventDefault();
+      }
+      
+      // Handle answer selection (A,B,C,D or 1,2,3,4)
+      if (isAnswerKey) {
+        let answerIndex = -1;
+        
+        if (['a', 'b', 'c', 'd'].includes(key)) {
+          answerIndex = key.charCodeAt(0) - 97; // a=0, b=1, c=2, d=3
+        } else if (['1', '2', '3', '4'].includes(key)) {
+          answerIndex = parseInt(key) - 1; // 1=0, 2=1, 3=2, 4=3
+        }
+        
+        if (stepByStepMode) {
+          // Step-by-step mode
+          const currentQuestion = allQuestions[currentQuestionIndex];
+          if (!currentQuestion) return;
+          
+          // Check if this option exists
+          if (answerIndex >= 0 && currentQuestion.options && answerIndex < currentQuestion.options.length) {
+            const answerLetter = String.fromCharCode(65 + answerIndex); // Convert to A,B,C,D
+            
+            // Only select if not already answered
+            const key = `${currentQuestion.exerciseId || currentQuestion.id}-${currentQuestion.id}`;
+            if (!selectedAnswers[key]) {
+              console.log(`⌨️ Keyboard selection (step-by-step): ${event.key.toUpperCase()} -> ${answerLetter}`);
+              handleAnswerSelectWithNext(
+                currentQuestion.exerciseId || currentQuestion.id,
+                currentQuestion.id,
+                answerLetter
+              );
+            }
+          }
+        } else {
+          // All-at-once mode - find the first unanswered question or use current focus
+          const availableQuestions = [...(questionsData || []), ...(allQuestions || [])];
+          
+          // Get exerciseId from currentExercise
+          const currentExerciseId = currentExercise?.[0]?.id || 'default';
+          const isMixed = currentExercise?.[0]?.isMixed;
+          
+          // Try to find first unanswered question
+          let targetQuestion = null;
+          for (const question of availableQuestions) {
+            const answerKey = isMixed ? 
+              `${question.exerciseId}_${question.id}` : 
+              `${currentExerciseId}_${question.id}`;
+            if (!selectedAnswers[answerKey]) {
+              targetQuestion = question;
+              break;
+            }
+          }
+          
+          // If all answered, use first question
+          if (!targetQuestion && availableQuestions.length > 0) {
+            targetQuestion = availableQuestions[0];
+          }
+          
+          if (targetQuestion && answerIndex >= 0 && targetQuestion.options && answerIndex < targetQuestion.options.length) {
+            const answerLetter = String.fromCharCode(65 + answerIndex); // Convert to A,B,C,D
+            const exerciseIdToUse = isMixed ? targetQuestion.exerciseId : currentExerciseId;
+            console.log(`⌨️ Keyboard selection (all-at-once): ${event.key.toUpperCase()} -> ${answerLetter} for question ${targetQuestion.id}`);
+            handleAnswerSelect(exerciseIdToUse, targetQuestion.id, answerLetter);
+          }
+        }
+      }
+      
+      // Handle navigation
+      if (stepByStepMode) {
+        if (key === 'enter' || key === 'arrowright' || key === ' ') {
+          // Next question
+          if (currentQuestionIndex < allQuestions.length - 1) {
+            setCurrentQuestionIndex(prev => prev + 1);
+            setShowAnswerResult(false);
+            setShowExplanation(false);
+          }
+        } else if (key === 'arrowleft') {
+          // Previous question
+          if (currentQuestionIndex > 0) {
+            setCurrentQuestionIndex(prev => prev - 1);
+            setShowAnswerResult(false);
+            setShowExplanation(false);
+          }
+        }
+      } else {
+        // All-at-once mode navigation
+        if (key === 'enter') {
+          // Submit quiz
+          console.log('⌨️ Enter pressed: Submitting quiz');
+          finishQuiz();
+        }
+      }
+    };
+    
+    // Add event listener
+    window.addEventListener('keydown', handleKeyPress);
+    
+    // Cleanup
+    return () => {
+      window.removeEventListener('keydown', handleKeyPress);
+    };
+  }, [quizStarted, stepByStepMode, showResult, currentQuestionIndex, allQuestions, selectedAnswers, questionsData, currentExercise]);
+
+  // Function to reload all available questions for question selector
+  const reloadAllAvailableQuestions = async () => {
+    try {
+      console.log('🔄 Reloading all available questions for selector...');
+      const response = await exerciseAPI.getAll();
+      if (response.success) {
+        const allQuestions = [];
+        
+        // Process each exercise
+        response.exercises.forEach(exercise => {
+          if (exercise.questions && Array.isArray(exercise.questions)) {
+            exercise.questions.forEach((question, questionIndex) => {
+              if (question && (question.question || question.text)) {
+                
+                // Determine question type based on category and content
+                let questionType = question.type || 'multiple-choice';
+                let options = question.options || [];
+                let correctAnswer = question.correctAnswer || question.answer;
+                
+                // Special handling for clozetext
+                if (exercise.category === 'clozetext') {
+                  // Check if it's truly a fill-blank question or multiple choice
+                  if (question.type === 'fill-blank' || (!question.options && !question.answers)) {
+                    questionType = 'fill-blank';
+                    // For true fill-blank, create blanks array
+                    if (question.answers && Array.isArray(question.answers)) {
+                      // Multiple blanks
+                    } else if (question.correctAnswer) {
+                      // Single blank
+                    }
+                  } else {
+                    // It's a multiple choice cloze question
+                    questionType = 'multiple-choice';
+                    if (question.options && Array.isArray(question.options) && question.options.length > 0) {
+                      options = question.options;
+                      // Ensure correct answer is in A,B,C,D format
+                      if (question.correct) {
+                        correctAnswer = question.correct;
+                      } else if (question.correctAnswer) {
+                        // Find the index of correct answer and convert to letter
+                        const correctIndex = options.indexOf(question.correctAnswer);
+                        correctAnswer = correctIndex >= 0 ? String.fromCharCode(65 + correctIndex) : 'A';
+                      } else {
+                        correctAnswer = 'A';
+                      }
+                    } else if (question.answers && Array.isArray(question.answers)) {
+                      // Create options from answers array
+                      options = question.answers;
+                      correctAnswer = 'A'; // First option as correct
+                    } else {
+                      // Create default options for cloze based on common patterns
+                      const baseAnswer = question.correctAnswer || question.answer || 'go';
+                      
+                      // Common English grammar options based on typical cloze patterns
+                      const commonOptions = {
+                        'go': ['go', 'goes', 'going', 'went'],
+                        'have': ['have', 'has', 'having', 'had'],
+                        'be': ['am', 'is', 'are', 'was'],
+                        'do': ['do', 'does', 'doing', 'did'],
+                        'will': ['will', 'would', 'can', 'could'],
+                        'the': ['the', 'a', 'an', 'this']
+                      };
+                      
+                      // Try to find matching pattern or create generic options
+                      options = commonOptions[baseAnswer.toLowerCase()] || [
+                        baseAnswer,
+                        'option2',
+                        'option3', 
+                        'option4'
+                      ];
+                      correctAnswer = 'A';
+                    }
+                  }
+                } else {
+                  // For non-clozetext categories, ensure we have options
+                  if (!options || options.length === 0) {
+                    // Create default options if missing
+                    options = ['Option A', 'Option B', 'Option C', 'Option D'];
+                    correctAnswer = 'A';
+                  }
+                }
+                
+                allQuestions.push({
+                  id: `${exercise._id}-${questionIndex}`,
+                  exerciseId: exercise._id,
+                  exerciseTitle: exercise.title || 'Untitled',
+                  questionIndex: questionIndex,
+                  category: exercise.category,
+                  question: question.question || question.text || '',
+                  options: options,
+                  correctAnswer: correctAnswer,
+                  type: questionType,
+                  audioFile: question.audioFile || exercise.audioFile || null,
+                  blanks: question.blanks || (exercise.category === 'clozetext' ? [{ answer: correctAnswer }] : []),
+                  answers: question.answers || [],
+                  passage: exercise.passage || question.passage || null,
+                  image: question.image || exercise.image || null
+                });
+              }
+            });
+          }
+        });
+        
+        console.log('✅ Reloaded questions for selector:', allQuestions.length);
+        setAllAvailableQuestions(allQuestions);
+        return allQuestions;
+      }
+    } catch (error) {
+      console.error('❌ Error reloading questions:', error);
+      return [];
+    }
+  };
+
+  // Enhanced function to open question selector with fresh data
+  const openQuestionSelector = async () => {
+    console.log('🎯 Opening question selector...');
+    console.log('📊 Current allAvailableQuestions:', allAvailableQuestions.length);
+    
+    // If no questions available, reload them
+    if (allAvailableQuestions.length === 0) {
+      console.log('🔄 No questions available, reloading...');
+      await reloadAllAvailableQuestions();
+    }
+    
+    setShowQuestionSelector(true);
+  };
   const startQuiz = (category) => {
     if (!questionsData || !questionsData[category]) return;
     
@@ -1035,12 +1553,20 @@ function QuizApp() {
 
   // Handle answer selection for multiple choice and true/false
   const handleAnswerSelect = (exerciseId, questionId, answer) => {
+    console.log('📝 Answer selection (all-at-once mode):', { exerciseId, questionId, answer });
+    
     // Consistent key generation
     const key = `${exerciseId}-${questionId}`;
-    setSelectedAnswers(prev => ({
-      ...prev,
-      [key]: answer
-    }));
+    
+    console.log('💾 Saving answer with key:', key, 'answer:', answer);
+    setSelectedAnswers(prev => {
+      const newAnswers = {
+        ...prev,
+        [key]: answer
+      };
+      console.log('💾 Updated selectedAnswers (all-at-once):', newAnswers);
+      return newAnswers;
+    });
   };
 
   // Handle fill in the blank answers
@@ -1059,8 +1585,14 @@ function QuizApp() {
     let correctCount = 0;
     let detailedResults = [];
     
+    console.log('🎯 Starting quiz submission...');
+    console.log('📊 Step-by-step mode:', stepByStepMode);
+    console.log('📊 All questions length:', allQuestions.length);
+    console.log('📊 Current exercise:', currentExercise);
+    
     // UNIFIED LOGIC for all quiz types
     if (stepByStepMode && allQuestions.length > 0) {
+      console.log('📝 Processing step-by-step mode results...');
       // Step-by-step mode - use allQuestions
       allQuestions.forEach((question, index) => {
         const key = `${question.exerciseId}-${question.id}`;
@@ -1091,12 +1623,12 @@ function QuizApp() {
         
         if (isCorrect) correctCount++;
         
-        detailedResults.push({
+        const result = {
           id: question.id,
           exerciseId: question.exerciseId,
           exerciseTitle: question.exerciseTitle || '',
           question: question.question || question.questionText,
-          type: question.type || question.questionType,
+          type: question.type || question.questionType || 'multiple-choice',
           category: question.category,
           userAnswer,
           correctAnswer,
@@ -1106,7 +1638,18 @@ function QuizApp() {
           audioUrl: question.audioUrl || '',
           image: question.image || '',
           explanation: question.explanation || ''
+        };
+        
+        console.log(`📝 Result ${index + 1}:`, {
+          id: result.id,
+          exerciseId: result.exerciseId,
+          category: result.category,
+          isCorrect: result.isCorrect,
+          userAnswer: result.userAnswer,
+          correctAnswer: result.correctAnswer
         });
+        
+        detailedResults.push(result);
       });
     } else {
       // Legacy mode - use currentExercise structure
@@ -1182,13 +1725,21 @@ function QuizApp() {
       }
     }
     
+    console.log('📊 Quiz submission summary:');
+    console.log('✅ Correct answers:', correctCount);
+    console.log('📝 Total questions:', detailedResults.length);
+    console.log('📋 Detailed results:', detailedResults);
+    
     setScore(correctCount);
     setCorrectAnswers(detailedResults);
     setShowResult(true);
     
     // Update user statistics if user is logged in
     if (user && userStats) {
+      console.log('👤 User logged in, updating stats...');
       updateUserStats(detailedResults);
+    } else {
+      console.log('⚠️ No user logged in, skipping stats update');
     }
   };
 
@@ -1380,6 +1931,11 @@ function QuizApp() {
       clozetext: allAvailableQuestions.filter(q => q.category === 'clozetext')
     };
 
+    console.log('🎯 Question Selector Debug:');
+    console.log('📚 Total available questions:', allAvailableQuestions.length);
+    console.log('📊 Grouped questions:', groupedQuestions);
+    console.log('📝 Questions data:', questionsData);
+
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
         <div className="bg-white rounded-xl shadow-2xl w-full max-w-6xl mx-4 h-5/6 flex flex-col">
@@ -1407,87 +1963,152 @@ function QuizApp() {
               </div>
             </div>
             <p className="text-gray-600 mt-2">
-              Đã chọn: {selectedQuestionIds.length} câu hỏi
+              Đã chọn: {selectedQuestionIds.length} câu hỏi | 
+              Tổng có sẵn: {allAvailableQuestions.length} câu hỏi
             </p>
+            
+            {/* Debug info in development */}
+            {import.meta.env.DEV && (
+              <div className="mt-2 p-3 bg-yellow-50 rounded text-xs space-y-1">
+                <div><strong>Debug Question Selector:</strong></div>
+                <div>Total available: {allAvailableQuestions.length}</div>
+                <div>Reading: {groupedQuestions.reading.length}</div>
+                <div>Listening: {groupedQuestions.listening.length}</div>
+                <div>Clozetext: {groupedQuestions.clozetext.length}</div>
+                <div>Selected: {selectedQuestionIds.length}</div>
+                {allAvailableQuestions.length === 0 && (
+                  <div className="text-red-600 font-medium">
+                    ⚠️ No questions loaded! This might be a loading issue.
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {/* Reload button if no questions */}
+            {allAvailableQuestions.length === 0 && (
+              <div className="mt-2 flex justify-center">
+                <button
+                  onClick={reloadAllAvailableQuestions}
+                  className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 text-sm"
+                >
+                  🔄 Tải lại câu hỏi
+                </button>
+              </div>
+            )}
           </div>
           
           <div className="flex-1 overflow-auto p-6">
-            <div className="space-y-6">
-              {Object.keys(groupedQuestions).map(category => {
-                const categoryQuestions = groupedQuestions[category];
-                const selectedInCategory = selectedQuestionIds.filter(id => 
-                  categoryQuestions.some(q => q.id === id)
-                ).length;
-                
-                return (
-                  <div key={category} className="border border-gray-200 rounded-lg p-4">
-                    <div className="flex justify-between items-center mb-4">
-                      <h3 className="text-lg font-semibold text-gray-800 capitalize">
-                        {category} ({selectedInCategory}/{categoryQuestions.length})
-                      </h3>
-                      <div className="space-x-2">
-                        <button
-                          onClick={() => selectAllQuestionsInCategory(category)}
-                          className="text-sm bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600"
-                        >
-                          Chọn tất cả
-                        </button>
-                        <button
-                          onClick={() => clearCategorySelection(category)}
-                          className="text-sm bg-gray-500 text-white px-3 py-1 rounded hover:bg-gray-600"
-                        >
-                          Bỏ chọn
-                        </button>
+            {allAvailableQuestions.length === 0 ? (
+              // No questions available at all
+              <div className="text-center py-16">
+                <div className="text-6xl mb-4">📚</div>
+                <h3 className="text-xl font-semibold text-gray-700 mb-2">Không có câu hỏi nào</h3>
+                <p className="text-gray-500 mb-4">Chưa có câu hỏi nào được tải từ database</p>
+                <div className="space-y-2">
+                  <button
+                    onClick={reloadAllAvailableQuestions}
+                    className="bg-blue-500 text-white px-6 py-2 rounded-lg hover:bg-blue-600 mr-2"
+                  >
+                    🔄 Tải lại câu hỏi
+                  </button>
+                  <p className="text-sm text-gray-400">
+                    Hoặc thêm câu hỏi từ trang Admin Dashboard
+                  </p>
+                </div>
+              </div>
+            ) : (
+              // Questions available
+              <div className="space-y-6">
+                {Object.keys(groupedQuestions).map(category => {
+                  const categoryQuestions = groupedQuestions[category];
+                  const selectedInCategory = selectedQuestionIds.filter(id => 
+                    categoryQuestions.some(q => q.id === id)
+                  ).length;
+                  
+                  return (
+                    <div key={category} className="border border-gray-200 rounded-lg p-4">
+                      <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-lg font-semibold text-gray-800 capitalize">
+                          {category === 'reading' ? 'Đọc hiểu' : 
+                           category === 'listening' ? 'Nghe hiểu' : 
+                           category === 'clozetext' ? 'Điền từ' : category} 
+                          ({selectedInCategory}/{categoryQuestions.length})
+                        </h3>
+                        <div className="space-x-2">
+                          <button
+                            onClick={() => selectAllQuestionsInCategory(category)}
+                            className="text-sm bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600"
+                            disabled={categoryQuestions.length === 0}
+                          >
+                            Chọn tất cả
+                          </button>
+                          <button
+                            onClick={() => clearCategorySelection(category)}
+                            className="text-sm bg-gray-500 text-white px-3 py-1 rounded hover:bg-gray-600"
+                          >
+                            Bỏ chọn
+                          </button>
+                        </div>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-64 overflow-auto">
+                        {categoryQuestions.length > 0 ? (
+                          categoryQuestions.map(question => {
+                            const isSelected = selectedQuestionIds.includes(question.id);
+                            const isFrequentlyWrong = userStats?.frequentlyWrong?.some(w => w.questionId === question.id);
+                            
+                            return (
+                              <div
+                                key={question.id}
+                                className={`p-3 border rounded-lg cursor-pointer transition-all duration-200 ${
+                                  isSelected 
+                                    ? 'border-blue-500 bg-blue-50' 
+                                    : 'border-gray-200 hover:border-gray-300'
+                                } ${isFrequentlyWrong ? 'ring-2 ring-red-200 bg-red-50' : ''}`}
+                                onClick={() => toggleQuestionSelection(question.id)}
+                              >
+                                <div className="flex items-start space-x-2">
+                                  <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    onChange={() => {}}
+                                    className="mt-1"
+                                  />
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-medium text-gray-800 truncate">
+                                      {question.exerciseTitle}
+                                    </p>
+                                    <p className="text-xs text-gray-600 line-clamp-2">
+                                      {question.question.length > 60 
+                                        ? question.question.substring(0, 60) + '...'
+                                        : question.question
+                                      }
+                                    </p>
+                                    {isFrequentlyWrong && userStats?.frequentlyWrong && (
+                                      <span className="inline-block mt-1 px-2 py-1 text-xs bg-red-100 text-red-600 rounded">
+                                        Thường sai ({(userStats.frequentlyWrong.find(w => w?.questionId === question?.id)?.count || 0)}x)
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })
+                        ) : (
+                          <div className="col-span-full text-center py-8 text-gray-500">
+                            <div className="text-4xl mb-2">📝</div>
+                            <p>Không có câu hỏi {category === 'reading' ? 'đọc hiểu' : 
+                                                 category === 'listening' ? 'nghe hiểu' : 
+                                                 category === 'clozetext' ? 'điền từ' : category} nào</p>
+                            <p className="text-sm mt-1">Vui lòng thêm câu hỏi từ trang Admin</p>
+                          </div>
+                        )}
                       </div>
                     </div>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-64 overflow-auto">
-                      {categoryQuestions.map(question => {
-                        const isSelected = selectedQuestionIds.includes(question.id);
-                        const isFrequentlyWrong = userStats?.frequentlyWrong?.some(w => w.questionId === question.id);
-                        
-                        return (
-                          <div
-                            key={question.id}
-                            className={`p-3 border rounded-lg cursor-pointer transition-all duration-200 ${
-                              isSelected 
-                                ? 'border-blue-500 bg-blue-50' 
-                                : 'border-gray-200 hover:border-gray-300'
-                            } ${isFrequentlyWrong ? 'ring-2 ring-red-200 bg-red-50' : ''}`}
-                            onClick={() => toggleQuestionSelection(question.id)}
-                          >
-                            <div className="flex items-start space-x-2">
-                              <input
-                                type="checkbox"
-                                checked={isSelected}
-                                onChange={() => {}}
-                                className="mt-1"
-                              />
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium text-gray-800 truncate">
-                                  {question.exerciseTitle}
-                                </p>
-                                <p className="text-xs text-gray-600 line-clamp-2">
-                                  {question.question.length > 60 
-                                    ? question.question.substring(0, 60) + '...'
-                                    : question.question
-                                  }
-                                </p>
-                                {isFrequentlyWrong && userStats?.frequentlyWrong && (
-                                  <span className="inline-block mt-1 px-2 py-1 text-xs bg-red-100 text-red-600 rounded">
-                                    Thường sai ({(userStats.frequentlyWrong.find(w => w?.questionId === question?.id)?.count || 0)}x)
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
           
           <div className="p-6 border-t border-gray-200">
@@ -1676,15 +2297,43 @@ function QuizApp() {
   // Show quiz interface
   if (quizStarted && currentExercise && currentExercise.length > 0) {
     
+    console.log('🎮 Quiz Interface Debug:');
+    console.log('📊 Quiz started:', quizStarted);
+    console.log('📚 Current exercise:', currentExercise);
+    console.log('📝 All questions:', allQuestions.length, allQuestions);
+    console.log('📍 Current question index:', currentQuestionIndex);
+    console.log('🎯 Step by step mode:', stepByStepMode);
+    
     // Step-by-step quiz mode
     if (stepByStepMode && allQuestions.length > 0) {
       const currentQuestion = allQuestions[currentQuestionIndex];
       const isAnswered = answeredQuestions.has(currentQuestionIndex);
       const allAnswered = answeredQuestions.size === allQuestions.length;
       
+      console.log('🎯 Current question:', currentQuestion);
+      console.log('✅ Is answered:', isAnswered);
+      
       return (
         <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-4">
           <div className="container mx-auto px-4 max-w-6xl">
+            
+            {/* Debug info in development */}
+            {import.meta.env.DEV && (
+              <div className="bg-yellow-50 p-3 rounded-lg mb-4 text-xs">
+                <strong>Quiz Debug:</strong> Questions: {allQuestions.length}, Current: {currentQuestionIndex + 1}, 
+                Category: {currentCategory}, Exercise: {currentExercise[0]?.title}
+              </div>
+            )}
+            
+            {/* Keyboard shortcuts info */}
+            <div className="bg-blue-50 p-3 rounded-lg mb-4 text-sm">
+              <div className="flex items-center space-x-4 text-blue-700">
+                <span className="font-medium">⌨️ Phím tắt:</span>
+                <span><kbd className="px-2 py-1 text-xs bg-white rounded border">A</kbd><kbd className="px-2 py-1 text-xs bg-white rounded border ml-1">B</kbd><kbd className="px-2 py-1 text-xs bg-white rounded border ml-1">C</kbd><kbd className="px-2 py-1 text-xs bg-white rounded border ml-1">D</kbd> hoặc <kbd className="px-2 py-1 text-xs bg-white rounded border">1</kbd><kbd className="px-2 py-1 text-xs bg-white rounded border ml-1">2</kbd><kbd className="px-2 py-1 text-xs bg-white rounded border ml-1">3</kbd><kbd className="px-2 py-1 text-xs bg-white rounded border ml-1">4</kbd> để chọn</span>
+                <span><kbd className="px-2 py-1 text-xs bg-white rounded border">Enter</kbd> câu tiếp</span>
+                <span><kbd className="px-2 py-1 text-xs bg-white rounded border">←</kbd><kbd className="px-2 py-1 text-xs bg-white rounded border ml-1">→</kbd> điều hướng</span>
+              </div>
+            </div>
             
             {/* Progress Bar */}
             <div className="bg-white rounded-xl shadow-lg p-4 mb-6">
@@ -1790,25 +2439,67 @@ function QuizApp() {
                       {currentQuestion.questionText || currentQuestion.question}
                     </h3>
 
+                    {/* Debug info in development */}
+                    {import.meta.env.DEV && (
+                      <div className="mb-4 p-3 bg-yellow-50 rounded text-xs">
+                        <strong>Question Debug:</strong><br/>
+                        ID: {currentQuestion.id}<br/>
+                        Type: {currentQuestion.type}<br/>
+                        QuestionType: {currentQuestion.questionType}<br/>
+                        Category: {currentQuestion.category}<br/>
+                        Options: {JSON.stringify(currentQuestion.options)}<br/>
+                        CorrectAnswer: {currentQuestion.correctAnswer}<br/>
+                        Blanks: {JSON.stringify(currentQuestion.blanks)}
+                      </div>
+                    )}
+
                     {/* Answer Options */}
                     {currentQuestion.questionType === 'fill-blank' ? (
                       <div className="space-y-3">
-                        {currentQuestion.blanks?.map((blank, blankIndex) => (
-                          <div key={blankIndex} className="flex items-center space-x-3">
-                            <span className="text-gray-600 font-medium">Blank {blankIndex + 1}:</span>
+                        {currentQuestion.blanks && currentQuestion.blanks.length > 0 ? (
+                          currentQuestion.blanks.map((blank, blankIndex) => (
+                            <div key={blankIndex} className="flex items-center space-x-3">
+                              <span className="text-gray-600 font-medium">Blank {blankIndex + 1}:</span>
+                              <input
+                                type="text"
+                                placeholder="Your answer..."
+                                className="flex-1 border-2 border-gray-300 rounded-lg px-4 py-2 focus:border-blue-400 focus:outline-none"
+                                onChange={(e) => handleFillBlankChange(
+                                  currentQuestion.exerciseId,
+                                  currentQuestion.id,
+                                  blankIndex,
+                                  e.target.value
+                                )}
+                              />
+                            </div>
+                          ))
+                        ) : (
+                          // Fallback: single text input for true fill-blank questions
+                          <div className="flex items-center space-x-3">
+                            <span className="text-gray-600 font-medium">Answer:</span>
                             <input
                               type="text"
-                              placeholder="Your answer..."
+                              placeholder="Type your answer here..."
                               className="flex-1 border-2 border-gray-300 rounded-lg px-4 py-2 focus:border-blue-400 focus:outline-none"
                               onChange={(e) => handleFillBlankChange(
                                 currentQuestion.exerciseId,
                                 currentQuestion.id,
-                                blankIndex,
+                                0,
                                 e.target.value
                               )}
                             />
                           </div>
-                        ))}
+                        )}
+                        
+                        {/* Show options as hints if available */}
+                        {currentQuestion.options && currentQuestion.options.length > 0 && (
+                          <div className="mt-4 p-3 bg-blue-50 rounded-lg">
+                            <p className="text-sm font-medium text-blue-700 mb-2">💡 Gợi ý:</p>
+                            <div className="text-sm text-blue-600">
+                              {currentQuestion.options.join(', ')}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ) : currentQuestion.questionType === 'true-false' ? (
                       <div className="flex space-x-4">
@@ -1840,54 +2531,142 @@ function QuizApp() {
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 gap-3">
-                        {currentQuestion.options?.map((option, index) => {
-                          const optionLetter = getOptionLetter(index);
-                          // Consistent key generation
-                          const key = `${currentQuestion.exerciseId || currentQuestion.id}-${currentQuestion.id}`;
-                          const isSelected = selectedAnswers[key] === optionLetter;
-                          const hasAnswered = selectedAnswers[key] !== undefined;
-                          const isCorrectAnswer = (currentQuestion.correct || currentQuestion.correctAnswer) === optionLetter;
-                          
-                          // Determine button style based on state
-                          let buttonClass = 'p-4 text-left border-2 rounded-lg transition-all duration-200 ';
-                          if (hasAnswered) {
-                            if (isSelected) {
-                              if (isCorrectAnswer) {
-                                buttonClass += 'border-green-500 bg-green-100 text-green-800 shadow-md';
+                        {currentQuestion.options && currentQuestion.options.length > 0 ? (
+                          currentQuestion.options.map((option, index) => {
+                            const optionLetter = getOptionLetter(index);
+                            // Consistent key generation
+                            const key = `${currentQuestion.exerciseId || currentQuestion.id}-${currentQuestion.id}`;
+                            const isSelected = selectedAnswers[key] === optionLetter;
+                            const hasAnswered = selectedAnswers[key] !== undefined;
+                            const isCorrectAnswer = (currentQuestion.correct || currentQuestion.correctAnswer) === optionLetter;
+                            
+                            // Determine button style based on state
+                            let buttonClass = 'p-4 text-left border-2 rounded-lg transition-all duration-200 ';
+                            if (hasAnswered) {
+                              if (isSelected) {
+                                if (isCorrectAnswer) {
+                                  buttonClass += 'border-green-500 bg-green-100 text-green-800 shadow-md';
+                                } else {
+                                  buttonClass += 'border-red-500 bg-red-100 text-red-800 shadow-md';
+                                }
+                              } else if (isCorrectAnswer) {
+                                buttonClass += 'border-green-500 bg-green-50 text-green-700 shadow-sm';
                               } else {
-                                buttonClass += 'border-red-500 bg-red-100 text-red-800 shadow-md';
+                                buttonClass += 'border-gray-300 bg-gray-100 text-gray-600 cursor-not-allowed';
                               }
-                            } else if (isCorrectAnswer) {
-                              buttonClass += 'border-green-500 bg-green-50 text-green-700 shadow-sm';
                             } else {
-                              buttonClass += 'border-gray-300 bg-gray-100 text-gray-600 cursor-not-allowed';
+                              buttonClass += 'border-gray-200 hover:border-blue-300 hover:bg-blue-50';
                             }
-                          } else {
-                            buttonClass += 'border-gray-200 hover:border-blue-300 hover:bg-blue-50';
-                          }
-                          
-                          return (
-                            <button
-                              key={index}
-                              onClick={hasAnswered ? undefined : () => handleAnswerSelectWithNext(
-                                currentQuestion.exerciseId || currentQuestion.id,
-                                currentQuestion.id,
-                                optionLetter
-                              )}
-                              disabled={hasAnswered}
-                              className={buttonClass}
-                            >
-                              <span className="font-semibold mr-3">{optionLetter}.</span>
-                              {option}
-                              {hasAnswered && isCorrectAnswer && (
-                                <span className="ml-2 text-green-600 font-bold">✓</span>
-                              )}
-                              {hasAnswered && isSelected && !isCorrectAnswer && (
-                                <span className="ml-2 text-red-600 font-bold">✗</span>
-                              )}
-                            </button>
-                          );
-                        })}
+                            
+                            return (
+                              <button
+                                key={index}
+                                onClick={hasAnswered ? undefined : () => handleAnswerSelectWithNext(
+                                  currentQuestion.exerciseId || currentQuestion.id,
+                                  currentQuestion.id,
+                                  optionLetter
+                                )}
+                                disabled={hasAnswered}
+                                className={buttonClass}
+                              >
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center">
+                                    <span className="font-semibold mr-3">{optionLetter}.</span>
+                                    <span>{option}</span>
+                                  </div>
+                                  <div className="flex items-center space-x-2">
+                                    {/* Keyboard shortcut indicator */}
+                                    {!hasAnswered && (
+                                      <div className="flex space-x-1">
+                                        <kbd className="px-1.5 py-0.5 text-xs bg-gray-200 rounded border text-gray-600">
+                                          {optionLetter}
+                                        </kbd>
+                                        <kbd className="px-1.5 py-0.5 text-xs bg-gray-200 rounded border text-gray-600">
+                                          {index + 1}
+                                        </kbd>
+                                      </div>
+                                    )}
+                                    {/* Result indicators */}
+                                    {hasAnswered && isCorrectAnswer && (
+                                      <span className="text-green-600 font-bold">✓</span>
+                                    )}
+                                    {hasAnswered && isSelected && !isCorrectAnswer && (
+                                      <span className="text-red-600 font-bold">✗</span>
+                                    )}
+                                  </div>
+                                </div>
+                              </button>
+                            );
+                          })
+                        ) : (
+                          // Fallback when no options available - Try to load from database
+                          <div className="space-y-4">
+                            <div className="p-6 bg-yellow-50 border-2 border-yellow-200 rounded-lg text-center">
+                              <div className="text-4xl mb-2">⚠️</div>
+                              <h4 className="text-lg font-semibold text-yellow-700 mb-2">Thiếu đáp án</h4>
+                              <p className="text-yellow-600 mb-4">
+                                Câu hỏi này thiếu các lựa chọn A, B, C, D. Đang tạo options tự động...
+                              </p>
+                              
+                              {/* Auto-generate options based on question type */}
+                              <div className="mt-4">
+                                <button
+                                  onClick={() => {
+                                    // Auto-generate options for this question
+                                    const questionText = currentQuestion.question || currentQuestion.questionText || '';
+                                    let autoOptions = [];
+                                    
+                                    if (questionText.toLowerCase().includes('___') || questionText.toLowerCase().includes('blank')) {
+                                      // Grammar-based options
+                                      autoOptions = ['go', 'goes', 'going', 'went'];
+                                    } else if (questionText.toLowerCase().includes('will')) {
+                                      autoOptions = ['will', 'would', 'can', 'could'];
+                                    } else if (questionText.toLowerCase().includes('are') || questionText.toLowerCase().includes('is')) {
+                                      autoOptions = ['am', 'is', 'are', 'was'];
+                                    } else {
+                                      // Default options
+                                      autoOptions = ['Option A', 'Option B', 'Option C', 'Option D'];
+                                    }
+                                    
+                                    // Update the current question with generated options
+                                    const updatedQuestions = [...allQuestions];
+                                    updatedQuestions[currentQuestionIndex] = {
+                                      ...currentQuestion,
+                                      options: autoOptions,
+                                      correctAnswer: 'A'
+                                    };
+                                    setAllQuestions(updatedQuestions);
+                                  }}
+                                  className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600"
+                                >
+                                  🔄 Tạo đáp án tự động
+                                </button>
+                              </div>
+                            </div>
+                            
+                            {/* Alternative manual input */}
+                            <div className="p-4 bg-gray-50 rounded-lg">
+                              <h5 className="font-medium text-gray-700 mb-2">Hoặc nhập câu trả lời thủ công:</h5>
+                              <input
+                                type="text"
+                                placeholder="Nhập câu trả lời của bạn..."
+                                className="w-full border-2 border-gray-300 rounded-lg px-4 py-2 focus:border-blue-400 focus:outline-none"
+                                onChange={(e) => {
+                                  // Store as fill-blank answer
+                                  handleFillBlankChange(
+                                    currentQuestion.exerciseId,
+                                    currentQuestion.id,
+                                    0,
+                                    e.target.value
+                                  );
+                                }}
+                              />
+                              <p className="text-xs text-gray-500 mt-2">
+                                Đáp án đúng: {currentQuestion.correctAnswer || 'Không xác định'}
+                              </p>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -2062,6 +2841,65 @@ function QuizApp() {
                   className="bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-3 px-8 rounded-lg transition duration-200"
                 >
                   Nộp Bài
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Handle case where no questions are loaded
+    if (allQuestions.length === 0) {
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-8">
+          <div className="container mx-auto px-4 max-w-4xl">
+            <div className="bg-white rounded-xl shadow-lg p-8 text-center">
+              <div className="text-6xl mb-4">😕</div>
+              <h2 className="text-2xl font-bold text-gray-800 mb-4">Không có câu hỏi nào để hiển thị</h2>
+              <p className="text-gray-600 mb-6">
+                Đã khởi tạo quiz nhưng không tìm thấy câu hỏi nào. Điều này có thể do:
+              </p>
+              <div className="text-left max-w-md mx-auto mb-6">
+                <ul className="list-disc list-inside space-y-2 text-gray-600">
+                  <li>Câu hỏi chưa được tải từ database</li>
+                  <li>Lỗi trong việc xử lý dữ liệu câu hỏi</li>
+                  <li>Các câu hỏi đã chọn không hợp lệ</li>
+                </ul>
+              </div>
+              
+              {/* Debug info in development */}
+              {import.meta.env.DEV && (
+                <div className="bg-yellow-50 p-4 rounded-lg mb-6 text-left text-xs">
+                  <strong>Debug Info:</strong><br/>
+                  Current Category: {currentCategory}<br/>
+                  Current Exercise: {JSON.stringify(currentExercise)}<br/>
+                  All Questions Length: {allQuestions.length}<br/>
+                  Selected Question IDs: {JSON.stringify(selectedQuestionIds)}<br/>
+                  Available Questions: {allAvailableQuestions.length}
+                </div>
+              )}
+              
+              <div className="space-x-4">
+                <button
+                  onClick={() => {
+                    setQuizStarted(false);
+                    setCurrentExercise([]);
+                    setAllQuestions([]);
+                    setSelectedQuestionIds([]);
+                  }}
+                  className="bg-gray-500 hover:bg-gray-600 text-white px-6 py-2 rounded-lg"
+                >
+                  Quay lại trang chủ
+                </button>
+                <button
+                  onClick={() => {
+                    setShowQuestionSelector(true);
+                    setQuizStarted(false);
+                  }}
+                  className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded-lg"
+                >
+                  Chọn lại câu hỏi
                 </button>
               </div>
             </div>
@@ -2376,7 +3214,12 @@ function QuizApp() {
                     <p className="text-sm font-medium text-gray-800">Xin chào, {user.username}</p>
                     {userStats && (
                       <p className="text-xs text-gray-600">
-                        Tổng làm: {Number(userStats.totalQuestions) || 0} | Đúng: {Number(userStats.correctAnswers) || 0} | Sai: {Array.isArray(userStats.wrongAnswers) ? userStats.wrongAnswers.length : 0}
+                        Tổng làm: {Number(userStats.totalQuestions) || 0} | Đúng: {Number(userStats.correctAnswers) || 0} | Sai: {userStats.wrongAnswers ? userStats.wrongAnswers.length : 0}
+                      </p>
+                    )}
+                    {!userStats && (
+                      <p className="text-xs text-yellow-600">
+                        Đang tải thống kê...
                       </p>
                     )}
                   </div>
@@ -2386,6 +3229,26 @@ function QuizApp() {
                   >
                     📊 Thống kê
                   </button>
+                  {/* Debug button in development */}
+                  {import.meta.env.DEV && (
+                    <button
+                      onClick={async () => {
+                        if (user) {
+                          console.log('🔍 Debug: Current user:', user);
+                          console.log('🔍 Debug: Current stats:', userStats);
+                          try {
+                            const response = await userAPI.getStats(user._id || user.id);
+                            console.log('🔍 Debug: Fresh stats from API:', response);
+                          } catch (error) {
+                            console.error('🔍 Debug: Error loading stats:', error);
+                          }
+                        }
+                      }}
+                      className="bg-yellow-500 hover:bg-yellow-600 text-white px-2 py-1 rounded text-xs"
+                    >
+                      🔍
+                    </button>
+                  )}
                   <button
                     onClick={handleLogout}
                     className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg text-sm transition duration-200"
@@ -2415,6 +3278,18 @@ function QuizApp() {
             </div>
           </div>
         </div>
+        
+        {/* Debug Stats Component - Development Only */}
+        {import.meta.env.DEV && (
+          <DebugStats 
+            user={user}
+            userStats={userStats}
+            onRefreshStats={(newStats) => {
+              console.log('🔄 Refreshing stats from DebugStats:', newStats);
+              setUserStats(newStats);
+            }}
+          />
+        )}
         
         <div className="text-center mb-8">
           <p className="text-lg text-gray-600">Chọn loại bài tập và số lượng câu hỏi để bắt đầu</p>
@@ -2491,23 +3366,54 @@ function QuizApp() {
                   clozetext: 'Cloze Test'
                 };
                 
+                const availableQuestions = questionsData[category]?.length || 0;
+                
                 return (
                   <div key={category} className="space-y-2">
                     <label className="block text-sm font-medium text-gray-600">
-                      {categoryNames[category]}
+                      {categoryNames[category]} (Có {availableQuestions} câu)
                     </label>
-                    <select
-                      value={numberOfQuestions[category]}
-                      onChange={(e) => setNumberOfQuestions(prev => ({
-                        ...prev,
-                        [category]: parseInt(e.target.value)
-                      }))}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500"
-                    >
-                      {Array.from({length: 20}, (_, i) => i + 1).map(num => (
-                        <option key={num} value={num}>{num} câu</option>
-                      ))}
-                    </select>
+                    <div className="flex gap-2">
+                      {/* Preset quick options */}
+                      <div className="flex gap-1">
+                        {[5, 10, 15, 20].map(num => (
+                          <button
+                            key={num}
+                            onClick={() => setNumberOfQuestions(prev => ({
+                              ...prev,
+                              [category]: Math.min(num, availableQuestions)
+                            }))}
+                            className={`px-2 py-1 text-xs rounded ${
+                              numberOfQuestions[category] === num
+                                ? 'bg-indigo-500 text-white'
+                                : 'bg-gray-200 hover:bg-gray-300'
+                            }`}
+                            disabled={num > availableQuestions}
+                          >
+                            {num}
+                          </button>
+                        ))}
+                      </div>
+                      {/* Custom input */}
+                      <input
+                        type="number"
+                        min="1"
+                        max={availableQuestions}
+                        value={numberOfQuestions[category]}
+                        onChange={(e) => {
+                          const value = Math.min(parseInt(e.target.value) || 1, availableQuestions);
+                          setNumberOfQuestions(prev => ({
+                            ...prev,
+                            [category]: value
+                          }));
+                        }}
+                        className="flex-1 border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 text-center"
+                        placeholder="Nhập số"
+                      />
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      Tối đa: {availableQuestions} câu hỏi có sẵn
+                    </p>
                   </div>
                 );
               })}
@@ -2572,7 +3478,7 @@ function QuizApp() {
             {/* Question Selector Button */}
             <div className="mb-6">
               <button
-                onClick={() => setShowQuestionSelector(true)}
+                onClick={openQuestionSelector}
                 className="w-full p-6 border-2 border-dashed border-green-300 rounded-xl hover:border-green-400 hover:bg-green-50 transition-all duration-200 text-center"
               >
                 <div className="text-4xl mb-2">🎯</div>
@@ -2586,6 +3492,9 @@ function QuizApp() {
                       ({Array.isArray(userStats.frequentlyWrong) ? userStats.frequentlyWrong.length : 0} câu thường sai)
                     </span>
                   )}
+                </p>
+                <p className="text-sm text-gray-500 mt-2">
+                  Có sẵn: {allAvailableQuestions.length} câu hỏi
                 </p>
               </button>
             </div>

@@ -9,6 +9,7 @@ const UserStats = ({ user, onClose, onPriorityQuiz }) => {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
   const [selectedCategory, setSelectedCategory] = useState('');
+  const [userStatsData, setUserStatsData] = useState(null);
 
   useEffect(() => {
     if (user) {
@@ -19,33 +20,68 @@ const UserStats = ({ user, onClose, onPriorityQuiz }) => {
   const loadUserData = async () => {
     try {
       setLoading(true);
+      console.log('📊 Loading user data for UserStats component...', user._id);
+      
+      // First, load user stats directly
+      const statsResponse = await userAPI.getStats(user._id);
+      if (statsResponse.success) {
+        console.log('✅ User stats loaded:', statsResponse.stats);
+        setUserStatsData(statsResponse.stats);
+        
+        // Extract frequently wrong questions from user stats
+        const frequentlyWrong = statsResponse.stats.frequentlyWrong || [];
+        console.log('📝 Frequently wrong questions from stats:', frequentlyWrong.length);
+        
+        // Convert frequently wrong to priority questions format
+        const priorityQuestionsFromStats = frequentlyWrong.map((wrong, index) => ({
+          questionId: wrong.questionId,
+          exerciseId: wrong.exerciseId,
+          category: wrong.category,
+          question: wrong.question,
+          successRate: 0, // These are wrong answers, so 0% success
+          totalAttempts: wrong.count,
+          lastAttempt: wrong.lastWrong || wrong.timestamp,
+          isWeakPoint: true,
+          needsReview: true
+        }));
+        
+        setPriorityQuestions(priorityQuestionsFromStats);
+        setWeakPoints(priorityQuestionsFromStats); // Use same data for weak points
+        
+        // Set answer history from user stats
+        setAnswerHistory(statsResponse.stats.answerHistory || []);
+      }
       
       // Load performance data
       const performanceResponse = await userAPI.getPerformance(user._id);
       if (performanceResponse.success) {
+        console.log('✅ Performance data loaded:', performanceResponse.performance);
         setPerformanceData(performanceResponse.performance);
-      }
-
-      // Load priority questions
-      const priorityResponse = await userAPI.getPriorityQuestions(user._id, null, 20);
-      if (priorityResponse.success) {
-        setPriorityQuestions(priorityResponse.priorityQuestions);
-      }
-
-      // Load weak points
-      const weakPointsResponse = await userAPI.getWeakPoints(user._id);
-      if (weakPointsResponse.success) {
-        setWeakPoints(weakPointsResponse.weakPoints);
-      }
-
-      // Load recent history
-      const historyResponse = await userAPI.getHistory(user._id, null, 20);
-      if (historyResponse.success) {
-        setAnswerHistory(historyResponse.history);
+      } else {
+        console.log('⚠️ Performance data load failed, using stats data:', performanceResponse);
+        // Fallback to creating performance data from stats
+        if (statsResponse.success) {
+          const stats = statsResponse.stats;
+          const fallbackPerformance = {
+            totalQuestions: stats.totalQuestions || 0,
+            correctAnswers: stats.correctAnswers || 0,
+            successRate: stats.totalQuestions > 0 ? (stats.correctAnswers / stats.totalQuestions) * 100 : 0,
+            weakPoints: (stats.frequentlyWrong || []).length,
+            needsReview: (stats.frequentlyWrong || []).length,
+            categoryBreakdown: stats.categoryStats || {
+              reading: { total: 0, correct: 0 },
+              listening: { total: 0, correct: 0 },
+              clozetext: { total: 0, correct: 0 }
+            },
+            recentActivity: (stats.answerHistory || []).slice(-10),
+            priorityQuestions: priorityQuestionsFromStats
+          };
+          setPerformanceData(fallbackPerformance);
+        }
       }
 
     } catch (error) {
-      console.error('Error loading user data:', error);
+      console.error('❌ Error loading user data:', error);
     } finally {
       setLoading(false);
     }
@@ -135,22 +171,29 @@ const UserStats = ({ user, onClose, onPriorityQuiz }) => {
         <div className="p-6">
           {activeTab === 'overview' && performanceData && (
             <div className="space-y-6">
+              {/* Debug info in development */}
+              {import.meta.env.DEV && (
+                <div className="bg-yellow-50 p-3 rounded border text-xs">
+                  <strong>Debug:</strong> Performance data loaded: {JSON.stringify(performanceData, null, 2)}
+                </div>
+              )}
+              
               {/* Overall Stats */}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="bg-blue-50 p-4 rounded-lg">
-                  <div className="text-2xl font-bold text-blue-600">{performanceData.totalQuestions}</div>
+                  <div className="text-2xl font-bold text-blue-600">{performanceData.totalQuestions || 0}</div>
                   <div className="text-gray-600">Tổng câu hỏi</div>
                 </div>
                 <div className="bg-green-50 p-4 rounded-lg">
-                  <div className="text-2xl font-bold text-green-600">{performanceData.correctAnswers}</div>
+                  <div className="text-2xl font-bold text-green-600">{performanceData.correctAnswers || 0}</div>
                   <div className="text-gray-600">Trả lời đúng</div>
                 </div>
                 <div className="bg-yellow-50 p-4 rounded-lg">
-                  <div className="text-2xl font-bold text-yellow-600">{performanceData.successRate.toFixed(1)}%</div>
+                  <div className="text-2xl font-bold text-yellow-600">{(performanceData.successRate || 0).toFixed(1)}%</div>
                   <div className="text-gray-600">Tỷ lệ đúng</div>
                 </div>
                 <div className="bg-red-50 p-4 rounded-lg">
-                  <div className="text-2xl font-bold text-red-600">{performanceData.weakPoints}</div>
+                  <div className="text-2xl font-bold text-red-600">{performanceData.weakPoints || 0}</div>
                   <div className="text-gray-600">Điểm yếu</div>
                 </div>
               </div>
@@ -159,7 +202,7 @@ const UserStats = ({ user, onClose, onPriorityQuiz }) => {
               <div className="bg-white border rounded-lg p-4">
                 <h3 className="text-lg font-semibold mb-4">Thống kê theo danh mục</h3>
                 <div className="space-y-3">
-                  {Object.entries(performanceData.categoryBreakdown).map(([category, stats]) => (
+                  {performanceData.categoryBreakdown && Object.entries(performanceData.categoryBreakdown).map(([category, stats]) => (
                     <div key={category} className="flex items-center justify-between">
                       <div className="flex items-center space-x-3">
                         <span className={`px-2 py-1 text-xs rounded-full ${getCategoryColor(category)}`}>
@@ -167,11 +210,11 @@ const UserStats = ({ user, onClose, onPriorityQuiz }) => {
                            category === 'listening' ? 'Nghe hiểu' : 'Điền từ'}
                         </span>
                         <span className="text-sm text-gray-600">
-                          {stats.correct}/{stats.total} câu
+                          {stats.correct || 0}/{stats.total || 0} câu
                         </span>
                       </div>
                       <div className="text-sm font-medium">
-                        {stats.total > 0 ? ((stats.correct / stats.total) * 100).toFixed(1) : 0}%
+                        {(stats.total || 0) > 0 ? (((stats.correct || 0) / (stats.total || 0)) * 100).toFixed(1) : 0}%
                       </div>
                     </div>
                   ))}
@@ -185,14 +228,18 @@ const UserStats = ({ user, onClose, onPriorityQuiz }) => {
                   className="bg-blue-500 text-white p-4 rounded-lg hover:bg-blue-600 transition-colors"
                 >
                   <div className="text-lg font-semibold">Luyện tập điểm yếu</div>
-                  <div className="text-sm opacity-90">{performanceData.priorityQuestions.length} câu ưu tiên</div>
+                  <div className="text-sm opacity-90">
+                    {userStatsData?.frequentlyWrong?.length || 0} câu ưu tiên
+                  </div>
                 </button>
                 <button
                   onClick={() => setActiveTab('weak-points')}
                   className="bg-red-500 text-white p-4 rounded-lg hover:bg-red-600 transition-colors"
                 >
                   <div className="text-lg font-semibold">Xem điểm yếu</div>
-                  <div className="text-sm opacity-90">{performanceData.weakPoints} điểm cần cải thiện</div>
+                  <div className="text-sm opacity-90">
+                    {userStatsData?.frequentlyWrong?.length || 0} điểm cần cải thiện
+                  </div>
                 </button>
               </div>
             </div>
@@ -201,7 +248,9 @@ const UserStats = ({ user, onClose, onPriorityQuiz }) => {
           {activeTab === 'priority' && (
             <div className="space-y-4">
               <div className="flex justify-between items-center">
-                <h3 className="text-lg font-semibold">Câu hỏi ưu tiên ({priorityQuestions.length})</h3>
+                <h3 className="text-lg font-semibold">
+                  Câu hỏi ưu tiên ({userStatsData?.frequentlyWrong?.length || 0})
+                </h3>
                 <div className="flex space-x-2">
                   <select
                     value={selectedCategory}
@@ -222,119 +271,181 @@ const UserStats = ({ user, onClose, onPriorityQuiz }) => {
                 </div>
               </div>
 
+              {/* Debug info in development */}
+              {import.meta.env.DEV && userStatsData && (
+                <div className="bg-blue-50 p-3 rounded border text-xs">
+                  <strong>Debug priority questions:</strong> Using frequentlyWrong data ({userStatsData.frequentlyWrong?.length || 0} items)
+                </div>
+              )}
+
               <div className="space-y-3">
-                {priorityQuestions
-                  .filter(q => !selectedCategory || q.category === selectedCategory)
-                  .slice(0, 10)
-                  .map((question, index) => (
-                    <div key={`${question.exerciseId}-${question.questionId}`} className="border rounded-lg p-4">
-                      <div className="flex justify-between items-start">
-                        <div className="flex-1">
-                          <div className="flex items-center space-x-2 mb-2">
-                            <span className={`px-2 py-1 text-xs rounded-full ${getCategoryColor(question.category)}`}>
-                              {question.category === 'reading' ? 'Đọc hiểu' : 
-                               question.category === 'listening' ? 'Nghe hiểu' : 'Điền từ'}
-                            </span>
-                            {question.isWeakPoint && (
-                              <span className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded-full">
-                                Điểm yếu
+                {userStatsData?.frequentlyWrong && userStatsData.frequentlyWrong.length > 0 ? (
+                  userStatsData.frequentlyWrong
+                    .filter(item => !selectedCategory || item.category === selectedCategory)
+                    .slice(0, 10)
+                    .map((item, index) => (
+                      <div key={`${item.exerciseId || 'unknown'}-${item.questionId || index}`} 
+                           className="border rounded-lg p-4">
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1">
+                            <div className="flex items-center space-x-2 mb-2">
+                              <span className={`px-2 py-1 text-xs rounded-full ${getCategoryColor(item.category)}`}>
+                                {item.category === 'reading' ? 'Đọc hiểu' : 
+                                 item.category === 'listening' ? 'Nghe hiểu' : 
+                                 item.category === 'clozetext' ? 'Điền từ' : item.category || 'Không xác định'}
                               </span>
-                            )}
-                            {question.needsReview && (
+                              <span className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded-full">
+                                Ưu tiên cao
+                              </span>
                               <span className="px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded-full">
                                 Cần ôn tập
                               </span>
-                            )}
+                            </div>
+                            <p className="text-sm font-medium text-gray-900 mb-1">
+                              {item.question || `Câu hỏi ID: ${item.questionId}`}
+                            </p>
+                            <div className="text-xs text-gray-500">
+                              Sai: {item.count || 0} lần
+                              {item.lastWrong && (
+                                <span> • Lần cuối: {formatDate(item.lastWrong)}</span>
+                              )}
+                              {item.timestamp && !item.lastWrong && (
+                                <span> • Lần cuối: {formatDate(item.timestamp)}</span>
+                              )}
+                            </div>
                           </div>
-                          <p className="text-sm font-medium text-gray-900 mb-1">{question.question}</p>
-                          <div className="text-xs text-gray-500">
-                            Tỷ lệ đúng: {question.successRate.toFixed(1)}% • 
-                            Lần làm: {question.totalAttempts} • 
-                            Lần cuối: {formatDate(question.lastAttempt)}
+                          <div className="text-right">
+                            <div className="text-sm font-semibold text-gray-900">#{index + 1}</div>
+                            <div className="text-xs text-gray-500">ưu tiên</div>
                           </div>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-sm font-semibold text-gray-900">#{index + 1}</div>
-                          <div className="text-xs text-gray-500">ưu tiên</div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    ))
+                ) : (
+                  <div className="text-center py-8 text-gray-500">
+                    <p>Chưa có câu hỏi ưu tiên</p>
+                    <p className="text-sm mt-2">Làm thêm bài tập để xem các câu hỏi cần ôn tập!</p>
+                  </div>
+                )}
               </div>
             </div>
           )}
 
           {activeTab === 'weak-points' && (
             <div className="space-y-4">
-              <h3 className="text-lg font-semibold">Phân tích điểm yếu ({weakPoints.length})</h3>
+              <h3 className="text-lg font-semibold">
+                Phân tích điểm yếu ({userStatsData?.frequentlyWrong?.length || 0})
+              </h3>
+              
+              {/* Debug info in development */}
+              {import.meta.env.DEV && userStatsData && (
+                <div className="bg-yellow-50 p-3 rounded border text-xs">
+                  <strong>Debug frequentlyWrong:</strong> {JSON.stringify(userStatsData.frequentlyWrong, null, 2)}
+                </div>
+              )}
               
               <div className="space-y-3">
-                {weakPoints.slice(0, 15).map((question, index) => (
-                  <div key={`${question.exerciseId}-${question.questionId}`} className="border rounded-lg p-4 bg-red-50">
-                    <div className="flex justify-between items-start">
-                      <div className="flex-1">
-                        <div className="flex items-center space-x-2 mb-2">
-                          <span className={`px-2 py-1 text-xs rounded-full ${getCategoryColor(question.category)}`}>
-                            {question.category === 'reading' ? 'Đọc hiểu' : 
-                             question.category === 'listening' ? 'Nghe hiểu' : 'Điền từ'}
-                          </span>
-                          <span className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded-full">
-                            {question.questionType}
-                          </span>
+                {userStatsData?.frequentlyWrong && userStatsData.frequentlyWrong.length > 0 ? (
+                  userStatsData.frequentlyWrong.slice(0, 15).map((item, index) => (
+                    <div key={`${item.exerciseId || 'unknown'}-${item.questionId || index}`} 
+                         className="border rounded-lg p-4 bg-red-50">
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <div className="flex items-center space-x-2 mb-2">
+                            <span className={`px-2 py-1 text-xs rounded-full ${getCategoryColor(item.category)}`}>
+                              {item.category === 'reading' ? 'Đọc hiểu' : 
+                               item.category === 'listening' ? 'Nghe hiểu' : 
+                               item.category === 'clozetext' ? 'Điền từ' : item.category || 'Không xác định'}
+                            </span>
+                            <span className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded-full">
+                              Hay sai
+                            </span>
+                          </div>
+                          <p className="text-sm font-medium text-gray-900 mb-1">
+                            {item.question || `Câu hỏi ID: ${item.questionId}`}
+                          </p>
+                          <div className="text-xs text-gray-600">
+                            Sai: {item.count || 0} lần
+                            {item.lastWrong && (
+                              <span> • Lần cuối: {formatDate(item.lastWrong)}</span>
+                            )}
+                            {item.timestamp && !item.lastWrong && (
+                              <span> • Lần cuối: {formatDate(item.timestamp)}</span>
+                            )}
+                          </div>
                         </div>
-                        <p className="text-sm font-medium text-gray-900 mb-1">{question.question}</p>
-                        <div className="text-xs text-gray-600">
-                          Đúng: {question.correctAttempts}/{question.totalAttempts} lần • 
-                          Tỷ lệ: {question.successRate.toFixed(1)}% • 
-                          Lần cuối: {formatDate(question.lastAttempt)}
+                        <div className="text-right">
+                          <div className="text-lg font-bold text-red-600">{item.count || 0}</div>
+                          <div className="text-xs text-gray-500">lần sai</div>
                         </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-lg font-bold text-red-600">{question.successRate.toFixed(0)}%</div>
-                        <div className="text-xs text-gray-500">tỷ lệ đúng</div>
                       </div>
                     </div>
+                  ))
+                ) : (
+                  <div className="text-center py-8 text-gray-500">
+                    <p>Chưa có câu nào bị sai nhiều lần</p>
+                    <p className="text-sm mt-2">Tiếp tục luyện tập để xem phân tích chi tiết!</p>
                   </div>
-                ))}
+                )}
               </div>
             </div>
           )}
 
           {activeTab === 'history' && (
             <div className="space-y-4">
-              <h3 className="text-lg font-semibold">Lịch sử làm bài ({answerHistory.length})</h3>
+              <h3 className="text-lg font-semibold">
+                Lịch sử làm bài ({userStatsData?.answerHistory?.length || 0})
+              </h3>
+              
+              {/* Debug info in development */}
+              {import.meta.env.DEV && userStatsData && (
+                <div className="bg-green-50 p-3 rounded border text-xs">
+                  <strong>Debug history:</strong> Using answerHistory from userStats ({userStatsData.answerHistory?.length || 0} items)
+                </div>
+              )}
               
               <div className="space-y-2">
-                {answerHistory.slice(0, 20).map((answer, index) => (
-                  <div key={index} className={`border rounded-lg p-3 ${answer.isCorrect ? 'bg-green-50' : 'bg-red-50'}`}>
-                    <div className="flex justify-between items-start">
-                      <div className="flex-1">
-                        <div className="flex items-center space-x-2 mb-1">
-                          <span className={`px-2 py-1 text-xs rounded-full ${getCategoryColor(answer.category)}`}>
-                            {answer.category === 'reading' ? 'Đọc hiểu' : 
-                             answer.category === 'listening' ? 'Nghe hiểu' : 'Điền từ'}
-                          </span>
-                          <span className={`px-2 py-1 text-xs rounded-full ${
-                            answer.isCorrect ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                          }`}>
-                            {answer.isCorrect ? 'Đúng' : 'Sai'}
-                          </span>
+                {userStatsData?.answerHistory && userStatsData.answerHistory.length > 0 ? (
+                  userStatsData.answerHistory.slice(0, 20).map((answer, index) => (
+                    <div key={`history-${index}`} 
+                         className={`border rounded-lg p-3 ${answer.isCorrect ? 'bg-green-50' : 'bg-red-50'}`}>
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <div className="flex items-center space-x-2 mb-1">
+                            <span className={`px-2 py-1 text-xs rounded-full ${getCategoryColor(answer.category)}`}>
+                              {answer.category === 'reading' ? 'Đọc hiểu' : 
+                               answer.category === 'listening' ? 'Nghe hiểu' : 
+                               answer.category === 'clozetext' ? 'Điền từ' : answer.category || 'Không xác định'}
+                            </span>
+                            <span className={`px-2 py-1 text-xs rounded-full ${
+                              answer.isCorrect ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                            }`}>
+                              {answer.isCorrect ? 'Đúng' : 'Sai'}
+                            </span>
+                          </div>
+                          <p className="text-sm font-medium text-gray-900 mb-1">
+                            {answer.question || `Câu hỏi ID: ${answer.questionId}`}
+                          </p>
+                          <div className="text-xs text-gray-600">
+                            <span className="font-medium">Bạn chọn:</span> {answer.selectedAnswer || answer.userAnswer} • 
+                            <span className="font-medium"> Đáp án:</span> {answer.correctAnswer}
+                            {answer.timeSpent > 0 && (
+                              <span> • <span className="font-medium">Thời gian:</span> {answer.timeSpent}s</span>
+                            )}
+                          </div>
                         </div>
-                        <p className="text-sm font-medium text-gray-900 mb-1">{answer.question}</p>
-                        <div className="text-xs text-gray-600">
-                          <span className="font-medium">Bạn chọn:</span> {answer.selectedAnswer} • 
-                          <span className="font-medium"> Đáp án:</span> {answer.correctAnswer}
-                          {answer.timeSpent > 0 && (
-                            <span> • <span className="font-medium">Thời gian:</span> {answer.timeSpent}s</span>
-                          )}
+                        <div className="text-xs text-gray-500">
+                          {formatDate(answer.timestamp)}
                         </div>
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        {formatDate(answer.timestamp)}
                       </div>
                     </div>
+                  ))
+                ) : (
+                  <div className="text-center py-8 text-gray-500">
+                    <p>Chưa có lịch sử làm bài</p>
+                    <p className="text-sm mt-2">Bắt đầu làm bài tập để xem lịch sử!</p>
                   </div>
-                ))}
+                )}
               </div>
             </div>
           )}

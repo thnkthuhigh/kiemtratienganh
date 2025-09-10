@@ -114,15 +114,63 @@ router.post('/stats/:userId', async (req, res) => {
     const { userId } = req.params;
     const { results, timeSpent = {} } = req.body;
 
+    console.log('📊 Updating stats for user:', userId, 'with', results.length, 'results');
+
     const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({ error: 'User not found!' });
     }
 
-    // Update statistics based on results
-    const newStats = { ...user.stats };
+    // Ensure user.stats exists and has all required fields
+    if (!user.stats) {
+      user.stats = {
+        totalQuestions: 0,
+        correctAnswers: 0,
+        answerHistory: [],
+        questionPerformance: [],
+        wrongAnswers: [],
+        frequentlyWrong: [],
+        categoryStats: {
+          reading: { total: 0, correct: 0 },
+          listening: { total: 0, correct: 0 },
+          clozetext: { total: 0, correct: 0 }
+        }
+      };
+    }
+
+    // Create a safe copy of stats with all required fields
+    const newStats = {
+      totalQuestions: user.stats.totalQuestions || 0,
+      correctAnswers: user.stats.correctAnswers || 0,
+      answerHistory: Array.isArray(user.stats.answerHistory) ? [...user.stats.answerHistory] : [],
+      questionPerformance: Array.isArray(user.stats.questionPerformance) ? [...user.stats.questionPerformance] : [],
+      wrongAnswers: Array.isArray(user.stats.wrongAnswers) ? [...user.stats.wrongAnswers] : [],
+      frequentlyWrong: Array.isArray(user.stats.frequentlyWrong) ? [...user.stats.frequentlyWrong] : [],
+      categoryStats: {
+        reading: { 
+          total: user.stats.categoryStats?.reading?.total || 0, 
+          correct: user.stats.categoryStats?.reading?.correct || 0 
+        },
+        listening: { 
+          total: user.stats.categoryStats?.listening?.total || 0, 
+          correct: user.stats.categoryStats?.listening?.correct || 0 
+        },
+        clozetext: { 
+          total: user.stats.categoryStats?.clozetext?.total || 0, 
+          correct: user.stats.categoryStats?.clozetext?.correct || 0 
+        }
+      }
+    };
     
-    results.forEach(result => {
+    console.log('📝 Processing', results.length, 'results...');
+    
+    results.forEach((result, index) => {
+      console.log(`📝 Processing result ${index + 1}:`, {
+        id: result.id,
+        category: result.category,
+        isCorrect: result.isCorrect
+      });
+      
       newStats.totalQuestions++;
       
       // Lấy thời gian làm bài cho câu hỏi này
@@ -151,43 +199,48 @@ router.post('/stats/:userId', async (req, res) => {
         question: result.question
       }, result.isCorrect, questionTime);
       
-      // Update category stats
-      if (newStats.categoryStats[result.category]) {
-        newStats.categoryStats[result.category].total++;
-        if (result.isCorrect) {
-          newStats.correctAnswers++;
-          newStats.categoryStats[result.category].correct++;
+      // Update category stats - ensure category exists
+      if (!newStats.categoryStats[result.category]) {
+        newStats.categoryStats[result.category] = { total: 0, correct: 0 };
+      }
+      
+      newStats.categoryStats[result.category].total++;
+      
+      if (result.isCorrect) {
+        newStats.correctAnswers++;
+        newStats.categoryStats[result.category].correct++;
+        console.log(`✅ Correct answer for question ${result.id}`);
+      } else {
+        // Add to wrong answers
+        newStats.wrongAnswers.push({
+          questionId: result.id,
+          exerciseId: result.exerciseId,
+          category: result.category,
+          question: result.question,
+          selectedAnswer: result.userAnswer,
+          correctAnswer: result.correctAnswer,
+          timestamp: new Date()
+        });
+
+        // Update frequently wrong
+        const existingWrong = newStats.frequentlyWrong.find(
+          w => w.questionId === result.id
+        );
+        
+        if (existingWrong) {
+          existingWrong.count++;
+          existingWrong.lastWrong = new Date();
         } else {
-          // Add to wrong answers
-          newStats.wrongAnswers.push({
+          newStats.frequentlyWrong.push({
             questionId: result.id,
             exerciseId: result.exerciseId,
             category: result.category,
             question: result.question,
-            selectedAnswer: result.userAnswer,
-            correctAnswer: result.correctAnswer,
-            timestamp: new Date()
+            count: 1,
+            lastWrong: new Date()
           });
-
-          // Update frequently wrong
-          const existingWrong = newStats.frequentlyWrong.find(
-            w => w.questionId === result.id
-          );
-          
-          if (existingWrong) {
-            existingWrong.count++;
-            existingWrong.lastWrong = new Date();
-          } else {
-            newStats.frequentlyWrong.push({
-              questionId: result.id,
-              exerciseId: result.exerciseId,
-              category: result.category,
-              question: result.question,
-              count: 1,
-              lastWrong: new Date()
-            });
-          }
         }
+        console.log(`❌ Wrong answer for question ${result.id}`);
       }
     });
 
@@ -199,9 +252,17 @@ router.post('/stats/:userId', async (req, res) => {
     // Sort frequently wrong by count
     newStats.frequentlyWrong.sort((a, b) => b.count - a.count);
 
-    // Update user
+    // Update user with the new stats
     user.stats = newStats;
     await user.save();
+    
+    console.log('✅ Stats updated successfully for user:', userId);
+    console.log('📊 New stats summary:', {
+      totalQuestions: newStats.totalQuestions,
+      correctAnswers: newStats.correctAnswers,
+      answerHistoryLength: newStats.answerHistory.length,
+      questionPerformanceLength: newStats.questionPerformance.length
+    });
 
     res.json({
       success: true,
@@ -210,9 +271,10 @@ router.post('/stats/:userId', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Update stats error:', error);
+    console.error('❌ Update stats error:', error);
     res.status(500).json({ 
-      error: 'Có lỗi xảy ra khi cập nhật thống kê!' 
+      error: 'Có lỗi xảy ra khi cập nhật thống kê!',
+      details: error.message
     });
   }
 });
@@ -304,7 +366,8 @@ router.get('/history/:userId', async (req, res) => {
       return res.status(404).json({ error: 'User not found!' });
     }
 
-    let history = user.stats.answerHistory;
+    // Ensure answerHistory exists
+    let history = user.stats?.answerHistory || [];
     
     // Lọc theo category nếu có
     if (category) {
@@ -346,7 +409,10 @@ router.get('/weak-points/:userId', async (req, res) => {
       return res.status(404).json({ error: 'User not found!' });
     }
 
-    let weakPoints = user.stats.questionPerformance.filter(q => q.isWeakPoint);
+    // Ensure questionPerformance exists
+    const questionPerformance = user.stats?.questionPerformance || [];
+    
+    let weakPoints = questionPerformance.filter(q => q.isWeakPoint);
     
     // Lọc theo category nếu có
     if (category) {
@@ -374,7 +440,7 @@ router.get('/weak-points/:userId', async (req, res) => {
     Object.keys(analysisByType).forEach(type => {
       const questions = analysisByType[type].questions;
       analysisByType[type].avgSuccessRate = 
-        questions.reduce((sum, q) => sum + q.successRate, 0) / questions.length;
+        questions.reduce((sum, q) => sum + (q.successRate || 0), 0) / questions.length;
     });
 
     res.json({
