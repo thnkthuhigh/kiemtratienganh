@@ -70,6 +70,22 @@ router.get('/:category', async (req, res) => {
   }
 });
 
+// GET /api/exercises/check-id/:id - Check if exercise ID is available
+router.get('/check-id/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const existingExercise = await Exercise.findOne({ id });
+    
+    res.json({
+      available: !existingExercise,
+      exists: !!existingExercise,
+      id: id
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // POST /api/exercises - Create new exercise
 router.post('/', async (req, res) => {
   try {
@@ -124,23 +140,48 @@ router.post('/', async (req, res) => {
     // Generate unique ID if not provided
     if (!exerciseData.id) {
       try {
-        const lastExercise = await Exercise.findOne({ 
+        // Find the highest ID number for this category
+        const existingExercises = await Exercise.find({ 
           category: exerciseData.category 
-        }).sort({ createdAt: -1 });
+        });
         
-        let nextId = 1;
-        if (lastExercise && lastExercise.id) {
-          const match = lastExercise.id.match(/\d+$/);
+        let maxIdNumber = 0;
+        existingExercises.forEach(exercise => {
+          const match = exercise.id.match(new RegExp(`${exerciseData.category}-(\\d+)`));
           if (match) {
-            nextId = parseInt(match[0]) + 1;
+            const idNumber = parseInt(match[1]);
+            if (idNumber > maxIdNumber) {
+              maxIdNumber = idNumber;
+            }
           }
-        }
+        });
         
-        exerciseData.id = `${exerciseData.category}-${nextId}`;
+        exerciseData.id = `${exerciseData.category}-${maxIdNumber + 1}`;
+        
+        // Double check that this ID doesn't exist
+        const existingWithSameId = await Exercise.findOne({ id: exerciseData.id });
+        if (existingWithSameId) {
+          // If it exists, use timestamp as fallback
+          exerciseData.id = `${exerciseData.category}-${Date.now()}`;
+        }
       } catch (dbError) {
         console.error('❌ Database error while generating ID:', dbError);
         // Fallback to timestamp-based ID if DB fails
         exerciseData.id = `${exerciseData.category}-${Date.now()}`;
+      }
+    } else {
+      // If ID is provided, check if it already exists
+      try {
+        const existingExercise = await Exercise.findOne({ id: exerciseData.id });
+        if (existingExercise) {
+          return res.status(400).json({ 
+            error: 'Exercise ID already exists',
+            message: `An exercise with ID "${exerciseData.id}" already exists. Please use a different ID or leave empty for auto-generation.`,
+            suggestedId: `${exerciseData.category}-${Date.now()}`
+          });
+        }
+      } catch (dbError) {
+        console.error('❌ Database error while checking existing ID:', dbError);
       }
     }
     
@@ -176,9 +217,16 @@ router.post('/', async (req, res) => {
     console.error('❌ Error stack:', error.stack);
     
     if (error.code === 11000) {
+      // Extract the duplicate key field from the error
+      const duplicateField = Object.keys(error.keyPattern || {})[0] || 'id';
+      const duplicateValue = error.keyValue?.[duplicateField] || 'unknown';
+      
       return res.status(400).json({ 
-        error: 'Exercise ID already exists',
-        details: error.message
+        error: 'Duplicate entry',
+        message: `An exercise with ${duplicateField} "${duplicateValue}" already exists.`,
+        field: duplicateField,
+        value: duplicateValue,
+        suggestedId: `${exerciseData.category}-${Date.now()}`
       });
     } else if (error.name === 'ValidationError') {
       return res.status(400).json({ 

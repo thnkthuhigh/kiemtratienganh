@@ -56,11 +56,29 @@ function AdminAddExercise() {
       });
       
       const newId = `${selectedCategory}-${maxId + 1}`;
-      setExerciseData(prev => ({ ...prev, id: newId }));
+      
+      // Double check that this ID doesn't exist
+      try {
+        const response = await fetch(`/api/exercises/check-id/${newId}`);
+        const idCheck = await response.json();
+        
+        if (idCheck.available) {
+          setExerciseData(prev => ({ ...prev, id: newId }));
+        } else {
+          // Fallback to timestamp if there's still a conflict
+          const fallbackId = `${selectedCategory}-${Date.now()}`;
+          setExerciseData(prev => ({ ...prev, id: fallbackId }));
+        }
+      } catch (checkError) {
+        console.warn('Could not check ID availability:', checkError);
+        setExerciseData(prev => ({ ...prev, id: newId }));
+      }
+      
     } catch (error) {
       console.error('Error generating auto ID:', error);
-      // Fallback to manual ID
-      setExerciseData(prev => ({ ...prev, id: `${selectedCategory}-1` }));
+      // Fallback ID generation
+      const fallbackId = `${selectedCategory}-${Date.now()}`;
+      setExerciseData(prev => ({ ...prev, id: fallbackId }));
     }
   };
 
@@ -241,6 +259,23 @@ function AdminAddExercise() {
     try {
       setLoading(true);
       
+      // Validate ID if provided
+      if (exerciseData.id && !isEditing) {
+        try {
+          const response = await fetch(`/api/exercises/check-id/${exerciseData.id}`);
+          const idCheck = await response.json();
+          
+          if (!idCheck.available) {
+            alert(`ID "${exerciseData.id}" đã tồn tại! Vui lòng chọn ID khác hoặc để trống để tự động tạo.`);
+            setLoading(false);
+            return;
+          }
+        } catch (idCheckError) {
+          console.warn('Could not check ID availability:', idCheckError);
+          // Continue with submission if ID check fails
+        }
+      }
+      
       // Prepare data with current values
       let dataToSubmit = { ...exerciseData };
       
@@ -305,15 +340,30 @@ function AdminAddExercise() {
       
       if (error.response?.data) {
         const errorData = error.response.data;
-        if (errorData.message) {
+        
+        // Handle specific errors
+        if (errorData.error === 'Duplicate entry' || errorData.error === 'Exercise ID already exists') {
+          errorMessage = `ID bài tập "${errorData.value || exerciseData.id}" đã tồn tại!`;
+          if (errorData.suggestedId) {
+            errorMessage += `\n\nID được đề xuất: ${errorData.suggestedId}`;
+            // Auto-update the ID field with suggested ID
+            setExerciseData(prev => ({
+              ...prev,
+              id: errorData.suggestedId
+            }));
+            errorMessage += '\n\nID đã được tự động cập nhật. Vui lòng thử lại.';
+          }
+        } else if (errorData.message) {
           errorMessage = errorData.message;
         } else if (errorData.error) {
           errorMessage = errorData.error;
         }
         
-        if (errorData.fields) {
+        if (errorData.fields && errorData.fields.length > 0) {
           errorMessage += '\nCác trường lỗi: ' + errorData.fields.join(', ');
         }
+      } else if (error.message) {
+        errorMessage = error.message;
       }
       
       alert(errorMessage);
